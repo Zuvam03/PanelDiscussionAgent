@@ -26,6 +26,7 @@ export const api = {
     }),
   tick: (id) => request(`/sessions/${id}/tick`, { method: 'POST' }),
   endSession: (id) => request(`/sessions/${id}/end`, { method: 'POST' }),
-  getReport: (id) => request(`/sessions/${id}/report`),
+  getReport: (id, regenerate = false) =>
+    request(`/sessions/${id}/report${regenerate ? '?regenerate=true' : ''}`),
   deleteSession: (id) => request(`/sessions/${id}`, { method: 'DELETE' }),
 };

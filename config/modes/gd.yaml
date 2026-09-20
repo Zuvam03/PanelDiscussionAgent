@@ -15,11 +15,11 @@ defaults:
   wrap_up_fraction: 0.85     # at 85% elapsed, agents start wrapping up
 
 turn_taking:
-  max_agent_turns_per_burst: 2   # agent turns generated after each student message
+  max_agent_turns_per_burst: 1   # one agent responds per student message (round-robin)
   floor_threshold: 0.35          # min desire-to-speak score to take the floor
   silence_tick_seconds: 8        # frontend polls at this cadence when student is quiet
   silence_event_after_ticks: 3   # ~24s of student silence logs STUDENT_SILENCE
-  chime_in_chance: 0.45          # chance a second agent reacts within a burst
+  chime_in_chance: 0.0           # disabled — strict round-robin, no chime-ins
 
 # Moves an agent may declare for a turn; weights shape the mock provider and
 # nudge real providers via the prompt.

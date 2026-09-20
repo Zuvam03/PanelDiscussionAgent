@@ -64,7 +64,11 @@ class Orchestrator:
         session.turns.append(turn)
         self._log_student_events(session, turn)
         new_turns = [turn]
-        new_turns += await self._agent_burst(session)
+        # Round-robin: exactly one agent responds per student message
+        speaker = self._next_round_robin_speaker(session)
+        if speaker:
+            agent_turn = await self._generate_agent_turn(session, speaker)
+            new_turns.append(agent_turn)
         self._check_time(session)
         return new_turns
 
@@ -111,10 +115,10 @@ class Orchestrator:
                 type=EventType.STUDENT_SILENCE, actor=STUDENT,
                 detail=f"~{session.silence_ticks * tt.silence_tick_seconds}s without speaking"))
         new_turns: list[Turn] = []
-        # Agents keep the conversation alive among themselves while the
-        # student is quiet — but not on every tick, to leave openings.
-        if session.silence_ticks >= 2 and self.rng.random() < 0.7:
-            speaker = self._pick_speaker(session, exclude_last=True)
+        # Round-robin: one agent speaks per tick, cycling in order.
+        # Skip every other tick to leave breathing room for the student.
+        if session.silence_ticks >= 2 and session.silence_ticks % 2 == 0:
+            speaker = self._next_round_robin_speaker(session)
             if speaker:
                 t = await self._generate_agent_turn(session, speaker)
                 new_turns.append(t)
@@ -125,20 +129,25 @@ class Orchestrator:
         self._check_time(session)
         return new_turns
 
-    # ------------------------------------------------------------ agent burst
+    # --------------------------------------------------------- round-robin
 
-    async def _agent_burst(self, session: Session) -> list[Turn]:
-        tt = self.mode.turn_taking
-        turns: list[Turn] = []
-        for i in range(tt.max_agent_turns_per_burst):
-            if i > 0 and self.rng.random() > tt.chime_in_chance:
+    def _next_round_robin_speaker(self, session: Session) -> Persona | None:
+        """Pick the next agent in rotation who hasn't spoken most recently."""
+        personas = self._personas(session)
+        if not personas:
+            return None
+        names = [p.name for p in personas]
+        # Find the last agent who spoke
+        last_agent = None
+        for t in reversed(session.turns):
+            if t.speaker != STUDENT and t.speaker in names:
+                last_agent = t.speaker
                 break
-            speaker = self._pick_speaker(session, exclude_last=True)
-            if speaker is None:
-                break
-            turn = await self._generate_agent_turn(session, speaker, chiming_in=(i > 0))
-            turns.append(turn)
-        return turns
+        if last_agent is None:
+            return personas[0]
+        last_idx = names.index(last_agent) if last_agent in names else -1
+        next_idx = (last_idx + 1) % len(names)
+        return personas[next_idx]
 
     def _pick_speaker(self, session: Session, exclude_last: bool) -> Persona | None:
         personas = self._personas(session)

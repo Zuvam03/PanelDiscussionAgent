@@ -9,12 +9,12 @@ const STRENGTH_COLORS = {
 const STRENGTH_LABELS = { strong: 'Strong', moderate: 'Moderate', weak: 'Weak' };
 
 const MARKER_LABELS = {
-  opened_discussion: { label: 'Opened discussion', yes: 'Yes', no: 'No' },
-  self_introduction: { label: 'Self-introduction', yes: 'Yes', no: 'No' },
-  attempted_summary: { label: 'Attempted summary', yes: 'Yes', no: 'No' },
-  asked_question: { label: 'Asked a question', yes: 'Yes', no: 'No' },
-  expressed_disagreement: { label: 'Expressed disagreement', yes: 'Yes', no: '-' },
-  redirected_topic: { label: 'Redirected topic', yes: 'Yes', no: '-' },
+  opened_discussion: { label: 'Opened discussion' },
+  self_introduction: { label: 'Self-introduction' },
+  attempted_summary: { label: 'Attempted summary' },
+  asked_question: { label: 'Asked a question' },
+  expressed_disagreement: { label: 'Expressed disagreement' },
+  redirected_topic: { label: 'Redirected topic' },
 };
 
 function EvalCard({ pe, highlight }) {
@@ -33,7 +33,7 @@ function EvalCard({ pe, highlight }) {
           <div className="eval-row good"><span className="eval-tag">+</span><span>{pe.what_worked}</span></div>
         )}
         {pe.what_didnt && pe.what_didnt !== 'Solid delivery' && (
-          <div className="eval-row bad"><span className="eval-tag">-</span><span>{pe.what_didnt}</span></div>
+          <div className="eval-row bad"><span className="eval-tag">&minus;</span><span>{pe.what_didnt}</span></div>
         )}
         {pe.comparison && (
           <div className="eval-row compare"><span className="eval-tag">vs</span><span>{pe.comparison}</span></div>
@@ -43,37 +43,48 @@ function EvalCard({ pe, highlight }) {
   );
 }
 
+function StatCard({ label, value, sub, color }) {
+  return (
+    <div className="stat-card">
+      <div className="stat-value" style={{ color: color || 'var(--accent)' }}>{value}</div>
+      <div className="stat-label">{label}</div>
+      {sub && <div className="stat-sub">{sub}</div>}
+    </div>
+  );
+}
+
 export default function ReportView({ sessionId, onBack }) {
   const [report, setReport] = useState(null);
   const [session, setSession] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [regenerating, setRegenerating] = useState(false);
 
-  useEffect(() => {
-    setLoading(true);
-    Promise.all([api.getReport(sessionId), api.getSession(sessionId)])
-      .then(([r, s]) => { setReport(r); setSession(s); })
+  function loadReport(regenerate = false) {
+    if (regenerate) setRegenerating(true);
+    else setLoading(true);
+    Promise.all([api.getReport(sessionId, regenerate), api.getSession(sessionId)])
+      .then(([r, s]) => { setReport(r); setSession(s); setError(''); })
       .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
-  }, [sessionId]);
+      .finally(() => { setLoading(false); setRegenerating(false); });
+  }
+
+  useEffect(() => { loadReport(); }, [sessionId]);
 
   if (error) return <div className="card" style={{ color: 'var(--red)' }}>{error}</div>;
   if (loading || !report || !session) {
     return (
-      <div className="card" style={{ textAlign: 'center', padding: '48px 24px' }}>
+      <div className="report-loading-page">
         <div className="report-loading-spinner" />
-        <p style={{ marginTop: 16, color: 'var(--text-dim)' }}>
-          Analysing your performance...
-        </p>
-        <p style={{ fontSize: '0.75rem', color: 'var(--text-dim)', marginTop: 4 }}>
-          The AI judge is reviewing every turn
-        </p>
+        <p className="loading-title">Analysing your performance...</p>
+        <p className="loading-sub">The AI coach is reviewing every turn</p>
       </div>
     );
   }
 
   const { metrics, structural_markers, swot, next_actions, coaching } = report;
 
+  const studentMetrics = metrics.find(m => m.speaker === 'student');
   const studentEvals = coaching?.point_evaluations?.filter(pe => pe.speaker === 'student') || [];
   const agentEvals = coaching?.point_evaluations?.filter(pe => pe.speaker !== 'student') || [];
   const agentsBySpeaker = {};
@@ -84,6 +95,7 @@ export default function ReportView({ sessionId, onBack }) {
 
   const strongCount = studentEvals.filter(e => e.strength === 'strong').length;
   const weakCount = studentEvals.filter(e => e.strength === 'weak').length;
+  const modCount = studentEvals.length - strongCount - weakCount;
 
   return (
     <div className="report-page">
@@ -95,6 +107,32 @@ export default function ReportView({ sessionId, onBack }) {
         </div>
         <button className="btn btn-secondary" onClick={onBack}>Back</button>
       </div>
+
+      {/* Quick stats row */}
+      {studentMetrics && (
+        <div className="stats-row">
+          <StatCard label="Your Turns" value={studentMetrics.turns}
+            sub={`of ${metrics.reduce((s, m) => s + m.turns, 0)} total`} />
+          <StatCard label="Word Share" value={`${(studentMetrics.word_share * 100).toFixed(0)}%`}
+            color={studentMetrics.word_share < 0.12 ? 'var(--red)' : 'var(--green)'} />
+          <StatCard label="Words Spoken" value={studentMetrics.words} />
+          <StatCard label="Questions" value={studentMetrics.questions} color="var(--blue)" />
+        </div>
+      )}
+
+      {/* ========== COACHING MISSING BANNER ========== */}
+      {!coaching && (
+        <section className="report-section coaching-missing">
+          <div className="coaching-missing-icon">&#9888;</div>
+          <h3 className="section-title">AI Analysis Unavailable</h3>
+          <p>The AI coach couldn't generate detailed analysis for this session. This can happen due to API rate limits.</p>
+          <p>Click below to retry — it usually works on the second attempt.</p>
+          <button className="btn btn-primary" onClick={() => loadReport(true)} disabled={regenerating}
+            style={{ marginTop: 12 }}>
+            {regenerating ? 'Generating...' : 'Generate AI Analysis'}
+          </button>
+        </section>
+      )}
 
       {/* ========== SECTION 1: VERDICT ========== */}
       {coaching?.judge_verdict && (
@@ -123,7 +161,7 @@ export default function ReportView({ sessionId, onBack }) {
           <h3 className="section-title">Your Points Evaluated</h3>
           <div className="eval-summary-bar">
             <span className="eval-summary-chip strong">{strongCount} Strong</span>
-            <span className="eval-summary-chip moderate">{studentEvals.length - strongCount - weakCount} Moderate</span>
+            <span className="eval-summary-chip moderate">{modCount} Moderate</span>
             <span className="eval-summary-chip weak">{weakCount} Weak</span>
           </div>
           <div className="eval-list">
@@ -216,7 +254,15 @@ export default function ReportView({ sessionId, onBack }) {
                   <td>{m.speaker === 'student' ? 'You' : m.speaker}</td>
                   <td>{m.turns}</td>
                   <td>{m.words}</td>
-                  <td>{(m.word_share * 100).toFixed(0)}%</td>
+                  <td>
+                    <div className="share-bar-wrap">
+                      <div className="share-bar" style={{
+                        width: `${Math.min(m.word_share * 100, 100)}%`,
+                        background: m.speaker === 'student' ? 'var(--accent)' : 'var(--border)',
+                      }} />
+                      <span>{(m.word_share * 100).toFixed(0)}%</span>
+                    </div>
+                  </td>
                   <td>{m.questions}</td>
                   <td>{m.disagreements}</td>
                   <td>{m.builds}</td>
@@ -229,10 +275,10 @@ export default function ReportView({ sessionId, onBack }) {
 
       {/* Structural markers */}
       <section className="report-section">
-        <h3 className="section-title">Checklist</h3>
+        <h3 className="section-title">GD Checklist</h3>
         <div className="marker-grid">
           {Object.entries(structural_markers).map(([key, value]) => {
-            const info = MARKER_LABELS[key] || { label: key, yes: 'Yes', no: 'No' };
+            const info = MARKER_LABELS[key] || { label: key };
             return (
               <div key={key} className={`marker-chip ${value ? 'done' : 'missed'}`}>
                 <span className="marker-icon">{value ? '✓' : '✗'}</span>
@@ -244,7 +290,7 @@ export default function ReportView({ sessionId, onBack }) {
       </section>
 
       {/* ========== SECTION 8: ACTION PLAN ========== */}
-      <section className="report-section">
+      <section className="report-section action-plan-section">
         <div className="section-badge green">Action Plan</div>
         <h3 className="section-title">What to Work On</h3>
 
@@ -273,8 +319,14 @@ export default function ReportView({ sessionId, onBack }) {
         )}
       </section>
 
-      <div style={{ paddingTop: 8, textAlign: 'center' }}>
+      <div className="report-footer">
         <button className="btn btn-primary" onClick={onBack}>Start New Session</button>
+        {coaching && (
+          <button className="btn btn-secondary" onClick={() => loadReport(true)} disabled={regenerating}
+            style={{ fontSize: '0.75rem' }}>
+            {regenerating ? 'Regenerating...' : 'Regenerate Analysis'}
+          </button>
+        )}
       </div>
     </div>
   );
