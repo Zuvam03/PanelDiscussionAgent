@@ -46,6 +46,13 @@ repo = SessionRepository()
 _live: dict[str, tuple[Session, Orchestrator]] = {}
 
 
+def _quota_info(session: Session) -> dict:
+    used: dict[str, int] = {}
+    for t in session.turns:
+        used[t.speaker] = used.get(t.speaker, 0) + len(t.text.split())
+    return {"limit": session.word_quota, "used": used}
+
+
 def _get_live(session_id: str) -> tuple[Session, Orchestrator]:
     if session_id in _live:
         return _live[session_id]
@@ -105,6 +112,7 @@ def create_session(req: CreateSessionRequest):
         duration_minutes=duration,
         thinking_seconds=mode.defaults.thinking_seconds,
         llm_provider=provider.name,
+        word_quota=mode.defaults.word_quota,
     )
     repo.save(session)
     return session.model_dump()
@@ -130,6 +138,7 @@ async def post_message(session_id: str, req: MessageRequest):
     return {
         "new_turns": [t.model_dump() for t in new_turns],
         "status": session.status.value,
+        "quota": _quota_info(session),
     }
 
 
@@ -137,12 +146,13 @@ async def post_message(session_id: str, req: MessageRequest):
 async def tick(session_id: str):
     session, orch = _get_live(session_id)
     if session.status not in (SessionStatus.LIVE, SessionStatus.WRAPPING):
-        return {"new_turns": [], "status": session.status.value}
+        return {"new_turns": [], "status": session.status.value, "quota": _quota_info(session)}
     new_turns = await orch.on_tick(session)
     repo.save(session)
     return {
         "new_turns": [t.model_dump() for t in new_turns],
         "status": session.status.value,
+        "quota": _quota_info(session),
     }
 
 

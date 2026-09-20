@@ -97,6 +97,7 @@ class Session(BaseModel):
     events: list[Event] = Field(default_factory=list)
     silence_ticks: int = 0            # consecutive ticks without student input
     llm_provider: str = "mock"
+    word_quota: int = 250             # max words per speaker
 
     def elapsed(self) -> float:
         if self.started_at is None:

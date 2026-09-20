@@ -8,6 +8,25 @@ import {
   VOICE_PARAMS,
 } from '../audio/voiceManager';
 
+function QuotaBar({ used, limit, color }) {
+  const pct = Math.min((used / limit) * 100, 100);
+  const remaining = Math.max(limit - used, 0);
+  const exhausted = remaining <= 0;
+  return (
+    <div className="quota-bar-wrap">
+      <div className="quota-bar-track">
+        <div className="quota-bar-fill" style={{
+          width: `${pct}%`,
+          background: exhausted ? 'var(--red)' : color,
+        }} />
+      </div>
+      <span className={`quota-label ${exhausted ? 'exhausted' : ''}`}>
+        {exhausted ? 'Done' : `${remaining}w left`}
+      </span>
+    </div>
+  );
+}
+
 export default function SessionView({ sessionId, onEnd, onBack }) {
   const [session, setSession] = useState(null);
   const [turns, setTurns] = useState([]);
@@ -20,6 +39,7 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
   const [voiceMap, setVoiceMap] = useState({});
   const [micAllowed, setMicAllowed] = useState(false);
   const [agentsTalking, setAgentsTalking] = useState(false);
+  const [quota, setQuota] = useState(null);
 
   const tickRef = useRef(null);
   const clockRef = useRef(null);
@@ -81,6 +101,7 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
       const res = await api.sendMessage(sessionId, text);
       setTurns((prev) => [...prev, ...res.new_turns]);
       setStatus(res.status);
+      if (res.quota) setQuota(res.quota);
 
       const agentTurns = res.new_turns.filter((t) => t.speaker !== 'student');
       for (const t of agentTurns) {
@@ -243,6 +264,7 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
     tickRef.current = setInterval(async () => {
       try {
         const res = await api.tick(sessionId);
+        if (res.quota) setQuota(res.quota);
         if (res.new_turns?.length) {
           setTurns((prev) => [...prev, ...res.new_turns]);
           for (const t of res.new_turns) {
@@ -349,6 +371,9 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
         <div className={`participant you ${activeSpeaker === 'student' ? 'speaking' : ''} ${isListening ? 'listening' : ''}`}>
           <div className="participant-avatar" style={{ borderColor: 'var(--accent)' }}>You</div>
           <div className="participant-name">You</div>
+          {quota && (
+            <QuotaBar used={quota.used.student || 0} limit={quota.limit} color="var(--accent)" />
+          )}
         </div>
         {session.persona_names.map((name) => {
           const p = personas[name];
@@ -358,30 +383,43 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
               <div className="participant-avatar" style={{ borderColor: color }}>{name[0]}</div>
               <div className="participant-name">{name}</div>
               {p && <div className="participant-archetype">{p.archetype.replace(/_/g, ' ')}</div>}
+              {quota && (
+                <QuotaBar used={quota.used[name] || 0} limit={quota.limit} color={color} />
+              )}
             </div>
           );
         })}
       </div>
 
       {/* Mic control area */}
-      {isLive && micAllowed && (
-        <div className="mic-control">
-          {agentsTalking ? (
-            <button className="interrupt-btn" onClick={handleInterrupt}>
-              <span className="interrupt-icon">&#9995;</span>
-              <span>Tap to Interrupt & Speak</span>
-              <span className="interrupt-hint">or press Space</span>
-            </button>
-          ) : isListening ? (
-            <div className="mic-live">
-              <span className="mic-live-dot" />
-              <span>Listening — speak now</span>
-            </div>
-          ) : (
-            <div className="mic-starting">Mic starting...</div>
-          )}
-        </div>
-      )}
+      {isLive && micAllowed && (() => {
+        const studentUsed = quota?.used?.student || 0;
+        const studentLeft = quota ? quota.limit - studentUsed : 999;
+        const studentExhausted = studentLeft <= 0;
+        return (
+          <div className="mic-control">
+            {studentExhausted ? (
+              <div className="mic-exhausted">
+                Your word quota is used up — listen and observe
+              </div>
+            ) : agentsTalking ? (
+              <button className="interrupt-btn" onClick={handleInterrupt}>
+                <span className="interrupt-icon">&#9995;</span>
+                <span>Tap to Interrupt & Speak</span>
+                <span className="interrupt-hint">or press Space</span>
+              </button>
+            ) : isListening ? (
+              <div className="mic-live">
+                <span className="mic-live-dot" />
+                <span>Listening — speak now</span>
+                {studentLeft < 60 && <span className="quota-warn">{studentLeft}w left</span>}
+              </div>
+            ) : (
+              <div className="mic-starting">Mic starting...</div>
+            )}
+          </div>
+        );
+      })()}
 
       {isLive && !micAllowed && (
         <div className="mic-warning">

@@ -56,6 +56,14 @@ class Orchestrator:
         all_p = load_personas()
         return [all_p[n] for n in session.persona_names if n in all_p]
 
+    # ----------------------------------------------------------- quota helpers
+
+    def _words_used(self, session: Session, speaker: str) -> int:
+        return sum(len(t.text.split()) for t in session.turns if t.speaker == speaker)
+
+    def _has_quota(self, session: Session, speaker: str) -> bool:
+        return self._words_used(session, speaker) < session.word_quota
+
     # ------------------------------------------------------- student message
 
     async def on_student_message(self, session: Session, text: str) -> list[Turn]:
@@ -66,7 +74,7 @@ class Orchestrator:
         new_turns = [turn]
         # Round-robin: exactly one agent responds per student message
         speaker = self._next_round_robin_speaker(session)
-        if speaker:
+        if speaker and self._has_quota(session, speaker.name):
             agent_turn = await self._generate_agent_turn(session, speaker)
             new_turns.append(agent_turn)
         self._check_time(session)
@@ -119,7 +127,7 @@ class Orchestrator:
         # Skip every other tick to leave breathing room for the student.
         if session.silence_ticks >= 2 and session.silence_ticks % 2 == 0:
             speaker = self._next_round_robin_speaker(session)
-            if speaker:
+            if speaker and self._has_quota(session, speaker.name):
                 t = await self._generate_agent_turn(session, speaker)
                 new_turns.append(t)
                 if session.silence_ticks >= 3:

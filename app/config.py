@@ -33,6 +33,7 @@ class ModeDefaults(BaseModel):
     duration_minutes: float = 8
     thinking_seconds: int = 45
     wrap_up_fraction: float = 0.85
+    word_quota: int = 250
 
 
 class ModeConfig(BaseModel):

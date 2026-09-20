@@ -13,6 +13,7 @@ defaults:
   duration_minutes: 8        # text-mode sessions run shorter than voice
   thinking_seconds: 45
   wrap_up_fraction: 0.85     # at 85% elapsed, agents start wrapping up
+  word_quota: 250            # max words each speaker can use; budget-based turn-taking
 
 turn_taking:
   max_agent_turns_per_burst: 1   # one agent responds per student message (round-robin)
