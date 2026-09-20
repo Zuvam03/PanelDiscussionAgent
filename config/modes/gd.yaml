@@ -1,0 +1,44 @@
+# Group Discussion mode config.
+# Mode-specific rules are config, not code: turn structure, pacing, and the
+# event vocabulary the engine tracks all live here. A new mode = a new file.
+
+name: gd
+display_name: Group Discussion
+description: >
+  CAT/XAT/placement-style GD. No assigned roles, free-for-all floor,
+  evaluated on initiative, articulation, listening, and knowledge.
+
+defaults:
+  num_agents: 4
+  duration_minutes: 8        # text-mode sessions run shorter than voice
+  thinking_seconds: 45
+  wrap_up_fraction: 0.85     # at 85% elapsed, agents start wrapping up
+
+turn_taking:
+  max_agent_turns_per_burst: 2   # agent turns generated after each student message
+  floor_threshold: 0.35          # min desire-to-speak score to take the floor
+  silence_tick_seconds: 8        # frontend polls at this cadence when student is quiet
+  silence_event_after_ticks: 3   # ~24s of student silence logs STUDENT_SILENCE
+  chime_in_chance: 0.45          # chance a second agent reacts within a burst
+
+# Moves an agent may declare for a turn; weights shape the mock provider and
+# nudge real providers via the prompt.
+moves:
+  - open
+  - new_point
+  - build
+  - disagree
+  - question
+  - summary
+  - redirect
+  - interrupt
+
+topics:
+  - "Is remote work making young professionals less employable?"
+  - "AI tutors will do more for education equality than government policy."
+  - "Should social media platforms verify the identity of every user?"
+  - "Degrees are becoming irrelevant in the age of skill-based hiring."
+  - "Space exploration is a luxury the world cannot currently afford."
+  - "Cash is dead: economies should go fully digital."
+  - "Climate action should be led by corporations, not consumers."
+  - "Universal Basic Income is the only answer to AI-driven job loss."
