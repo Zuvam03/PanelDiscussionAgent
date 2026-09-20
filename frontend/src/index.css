@@ -1054,3 +1054,425 @@ select:focus, input:focus, textarea:focus {
   color: var(--text-dim);
   line-height: 1.5;
 }
+
+/* ============================================================
+   Revamped Report Page
+   ============================================================ */
+
+.report-page {
+  max-width: 780px;
+  margin: 0 auto;
+  padding-bottom: 32px;
+}
+
+.report-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 24px;
+}
+.report-title {
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+.report-topic {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+
+.report-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin-bottom: 16px;
+}
+
+.section-badge {
+  display: inline-block;
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 3px 10px;
+  border-radius: 4px;
+  background: var(--accent);
+  color: #fff;
+  margin-bottom: 8px;
+}
+.section-badge.green { background: var(--green); color: #000; }
+.section-badge.orange { background: var(--orange); color: #000; }
+.section-badge.blue { background: var(--blue); color: #000; }
+.section-badge.purple { background: #a78bfa; color: #000; }
+
+.section-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 12px;
+}
+.section-subtitle {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  margin-top: -8px;
+  margin-bottom: 14px;
+}
+
+/* Verdict */
+.verdict-section {
+  border-left: 4px solid var(--accent);
+}
+.verdict-text {
+  font-size: 0.95rem;
+  line-height: 1.7;
+  color: var(--text);
+}
+
+/* Narrative */
+.narrative-section {
+  border-left: 4px solid var(--blue);
+}
+.narrative-para {
+  font-size: 0.85rem;
+  line-height: 1.65;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+/* Eval summary chips */
+.eval-summary-bar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.eval-summary-chip {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 4px 12px;
+  border-radius: 20px;
+}
+.eval-summary-chip.strong { background: rgba(52,211,153,0.15); color: var(--green); }
+.eval-summary-chip.moderate { background: rgba(251,146,60,0.15); color: var(--orange); }
+.eval-summary-chip.weak { background: rgba(248,113,113,0.15); color: var(--red); }
+
+/* Eval cards */
+.eval-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.eval-card {
+  background: var(--surface2);
+  border-radius: 8px;
+  padding: 14px;
+  transition: border-color 0.15s;
+  border: 1px solid transparent;
+}
+.eval-card.highlight {
+  border-left: 3px solid var(--accent);
+}
+.eval-card-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.eval-card-speaker {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text);
+}
+.eval-card-turn {
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  margin-left: auto;
+}
+.eval-card-quote {
+  font-size: 0.82rem;
+  font-style: italic;
+  color: var(--text-dim);
+  padding: 8px 12px;
+  border-left: 2px solid var(--border);
+  margin: 0 0 8px 0;
+  line-height: 1.5;
+}
+.eval-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.eval-row {
+  display: flex;
+  gap: 8px;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--text);
+  align-items: flex-start;
+}
+.eval-tag {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+.eval-row.good .eval-tag { background: rgba(52,211,153,0.2); color: var(--green); }
+.eval-row.bad .eval-tag { background: rgba(248,113,113,0.2); color: var(--red); }
+.eval-row.compare .eval-tag { background: rgba(96,165,250,0.2); color: var(--blue); }
+
+/* Missed opportunities (new) */
+.missed-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.missed-card {
+  background: var(--surface2);
+  border-radius: 8px;
+  padding: 14px;
+  border-left: 3px solid var(--orange);
+}
+.missed-context {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+  line-height: 1.5;
+}
+.missed-suggestion {
+  background: rgba(251,146,60,0.08);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 6px;
+}
+.missed-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--orange);
+  display: block;
+  margin-bottom: 4px;
+}
+.missed-quote {
+  font-size: 0.82rem;
+  color: var(--text);
+  font-style: italic;
+  line-height: 1.5;
+}
+.missed-why {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+/* Agent groups in comparison section */
+.agent-group {
+  margin-bottom: 16px;
+}
+.agent-group:last-child {
+  margin-bottom: 0;
+}
+.agent-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.agent-group-name {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #a78bfa;
+}
+.agent-group-stats {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+}
+
+/* Key moments timeline */
+.moments-timeline {
+  position: relative;
+  padding-left: 20px;
+}
+.moments-timeline::before {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--border);
+}
+.moment-item {
+  display: flex;
+  gap: 14px;
+  padding: 10px 0;
+  position: relative;
+}
+.moment-marker {
+  position: absolute;
+  left: -20px;
+  top: 16px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--surface);
+  z-index: 1;
+}
+.moment-content {
+  flex: 1;
+}
+.moment-label {
+  font-weight: 700;
+  font-size: 0.82rem;
+  color: var(--accent);
+  margin-bottom: 2px;
+}
+.moment-commentary {
+  font-size: 0.8rem;
+  color: var(--text);
+  line-height: 1.5;
+}
+.moment-turn {
+  font-size: 0.65rem;
+  color: var(--text-dim);
+  font-family: var(--mono);
+}
+
+/* Metrics table wrap */
+.metrics-table-wrap {
+  overflow-x: auto;
+}
+
+/* Marker chips */
+.marker-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+}
+.marker-chip.done {
+  background: rgba(52,211,153,0.1);
+  color: var(--green);
+}
+.marker-chip.missed {
+  background: rgba(248,113,113,0.08);
+  color: var(--text-dim);
+}
+.marker-icon {
+  font-weight: 700;
+}
+
+/* Next actions in report */
+.next-actions {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.next-actions h4 {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 10px;
+}
+.next-actions ol {
+  padding-left: 20px;
+}
+.next-actions li {
+  font-size: 0.82rem;
+  line-height: 1.55;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+/* ============================================================
+   Mic Control (SessionView)
+   ============================================================ */
+
+.mic-control {
+  text-align: center;
+  margin: 4px 0 8px;
+}
+
+.interrupt-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  padding: 14px 20px;
+  background: linear-gradient(135deg, var(--accent), #8b5cf6);
+  border: none;
+  border-radius: var(--radius);
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  animation: tapPulse 1.5s ease-in-out infinite;
+  transition: opacity 0.15s;
+}
+.interrupt-btn:hover {
+  opacity: 0.9;
+}
+.interrupt-icon {
+  font-size: 1.1rem;
+}
+.interrupt-hint {
+  font-size: 0.68rem;
+  font-weight: 400;
+  opacity: 0.7;
+  margin-left: 4px;
+}
+
+.mic-live {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: rgba(52,211,153,0.1);
+  border: 1px solid rgba(52,211,153,0.3);
+  border-radius: var(--radius);
+  color: var(--green);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+.mic-live-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--green);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.mic-starting {
+  padding: 10px 16px;
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  font-style: italic;
+}
+
+/* Move tag in transcript */
+.move-tag {
+  display: inline-block;
+  font-size: 0.6rem;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(255,255,255,0.08);
+  color: var(--text-dim);
+  margin-left: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  vertical-align: middle;
+}

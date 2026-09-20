@@ -19,6 +19,7 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
   const [personas, setPersonas] = useState({});
   const [voiceMap, setVoiceMap] = useState({});
   const [micAllowed, setMicAllowed] = useState(false);
+  const [agentsTalking, setAgentsTalking] = useState(false);
 
   const tickRef = useRef(null);
   const clockRef = useRef(null);
@@ -27,88 +28,101 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
   const sendingRef = useRef(false);
   const speechQueueRef = useRef([]);
   const transcriptEnd = useRef(null);
+  const voiceMapRef = useRef({});
+  const personasRef = useRef({});
 
-  // ---- send a student message to the API ----
-  const sendStudentMessage = useCallback(
-    async (text) => {
-      sendingRef.current = true;
-      try {
-        const res = await api.sendMessage(sessionId, text);
-        setTurns((prev) => [...prev, ...res.new_turns]);
-        setStatus(res.status);
+  // Keep refs in sync with state so processQueue always has fresh values
+  voiceMapRef.current = voiceMap;
+  personasRef.current = personas;
 
-        const agentTurns = res.new_turns.filter((t) => t.speaker !== 'student');
-        for (const t of agentTurns) {
-          ttsQueueRef.current.push(t);
-        }
-        processQueue();
-
-        if (res.status === 'ended') {
-          clearInterval(tickRef.current);
-          clearInterval(clockRef.current);
-        }
-      } catch (e) {
-        console.error('send error:', e);
-      } finally {
-        sendingRef.current = false;
-        if (speechQueueRef.current.length > 0) {
-          const queued = speechQueueRef.current.join(' ');
-          speechQueueRef.current = [];
-          sendStudentMessage(queued);
-        } else {
-          setActiveSpeaker(null);
-        }
-      }
-    },
-    [sessionId],
-  );
-
-  // ---- speech recognition ----
-  const handleTranscript = useCallback(
-    (text) => {
-      if (!text) return;
-      setInterimText('');
-
-      cancelAllSpeech();
-      ttsQueueRef.current = [];
-      isSpeakingRef.current = false;
-      setActiveSpeaker('student');
-
-      if (sendingRef.current) {
-        speechQueueRef.current.push(text);
-        return;
-      }
-
-      sendStudentMessage(text);
-    },
-    [sendStudentMessage],
-  );
-
-  const handleInterim = useCallback((text) => {
-    setInterimText(text);
-    setActiveSpeaker('student');
-  }, []);
-
-  const { isListening, isSupported, start: startMic, stop: stopMic, pauseForTTS, resumeAfterTTS, forceRestart } =
+  const { isListening, isSupported, start: startMic, stop: stopMic } =
     useSpeechRecognition({
       onResult: handleTranscript,
       onInterim: handleInterim,
-      enabled: status === 'live' || status === 'wrapping',
     });
 
-  // ---- TTS queue processing ----
+  // ---- mic control: on when we want to listen, off during TTS ----
+  function micOn() {
+    if (micAllowed) startMic();
+  }
+  function micOff() {
+    stopMic();
+  }
+
+  // ---- speech handlers ----
+  function handleTranscript(text) {
+    if (!text) return;
+    setInterimText('');
+
+    // Barge-in: cancel any agent TTS
+    cancelAllSpeech();
+    ttsQueueRef.current = [];
+    isSpeakingRef.current = false;
+    setAgentsTalking(false);
+    setActiveSpeaker('student');
+
+    if (sendingRef.current) {
+      speechQueueRef.current.push(text);
+      return;
+    }
+    sendStudentMessage(text);
+  }
+
+  function handleInterim(text) {
+    setInterimText(text);
+    setActiveSpeaker('student');
+  }
+
+  // ---- send student message ----
+  async function sendStudentMessage(text) {
+    sendingRef.current = true;
+    micOff(); // stop listening while processing
+    try {
+      const res = await api.sendMessage(sessionId, text);
+      setTurns((prev) => [...prev, ...res.new_turns]);
+      setStatus(res.status);
+
+      const agentTurns = res.new_turns.filter((t) => t.speaker !== 'student');
+      for (const t of agentTurns) {
+        ttsQueueRef.current.push(t);
+      }
+      if (agentTurns.length > 0) {
+        setAgentsTalking(true);
+      }
+      processQueue();
+
+      if (res.status === 'ended') {
+        clearInterval(tickRef.current);
+        clearInterval(clockRef.current);
+      }
+    } catch (e) {
+      console.error('send error:', e);
+      micOn(); // restore mic on error
+    } finally {
+      sendingRef.current = false;
+      if (speechQueueRef.current.length > 0) {
+        const queued = speechQueueRef.current.join(' ');
+        speechQueueRef.current = [];
+        sendStudentMessage(queued);
+      }
+    }
+  }
+
+  // ---- TTS queue ----
   async function processQueue() {
     if (isSpeakingRef.current) return;
     const next = ttsQueueRef.current.shift();
     if (!next) {
-      resumeAfterTTS();
+      // All agents done — turn mic back on
+      setAgentsTalking(false);
+      setActiveSpeaker(null);
+      micOn();
       return;
     }
 
     isSpeakingRef.current = true;
-    pauseForTTS();
-    const voice = voiceMap[next.speaker];
-    const archetype = personas[next.speaker]?.archetype;
+    const voice = voiceMapRef.current[next.speaker];
+    const archetype = personasRef.current[next.speaker]?.archetype;
     const params = VOICE_PARAMS[archetype] || {};
 
     try {
@@ -119,20 +133,33 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
         onEnd: () => setActiveSpeaker(null),
       });
     } catch {
-      // interrupted by barge-in
+      // barge-in cancelled it
     }
     isSpeakingRef.current = false;
     processQueue();
   }
 
-  // "Tap to Speak" — user manually interrupts agents
-  function handleTapToSpeak() {
+  // User presses the interrupt button
+  function handleInterrupt() {
     cancelAllSpeech();
     ttsQueueRef.current = [];
     isSpeakingRef.current = false;
+    setAgentsTalking(false);
     setActiveSpeaker(null);
-    forceRestart();
+    micOn();
   }
+
+  // Spacebar shortcut for interrupt
+  useEffect(() => {
+    function onKey(e) {
+      if (e.code === 'Space' && agentsTalking && status !== 'ended') {
+        e.preventDefault();
+        handleInterrupt();
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [agentsTalking, status]);
 
   // ---- session init ----
   useEffect(() => {
@@ -161,12 +188,11 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
     };
   }, [sessionId]);
 
-  // auto-scroll transcript
   useEffect(() => {
     transcriptEnd.current?.scrollIntoView({ behavior: 'smooth' });
   }, [turns]);
 
-  // ---- countdown → go live ----
+  // ---- countdown ----
   const startingRef = useRef(false);
 
   function startCountdown(sess) {
@@ -212,7 +238,7 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
     }, 1000);
   }
 
-  // ---- silence ticks (agents talk among themselves) ----
+  // ---- ticks ----
   function startTicking() {
     tickRef.current = setInterval(async () => {
       try {
@@ -222,13 +248,15 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
           for (const t of res.new_turns) {
             ttsQueueRef.current.push(t);
           }
+          micOff();
+          setAgentsTalking(true);
           processQueue();
         }
         setStatus(res.status);
         if (res.status === 'ended') {
           clearInterval(tickRef.current);
           clearInterval(clockRef.current);
-          stopMic();
+          micOff();
           cancelAllSpeech();
         }
       } catch {
@@ -240,7 +268,7 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
   async function handleEnd() {
     clearInterval(tickRef.current);
     clearInterval(clockRef.current);
-    stopMic();
+    micOff();
     cancelAllSpeech();
     await api.endSession(sessionId);
     setStatus('ended');
@@ -252,10 +280,7 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
     return `${m}:${sec.toString().padStart(2, '0')}`;
   }
 
-  // ---- agent colors ----
-  const AGENT_COLORS = [
-    '#6c63ff', '#34d399', '#fb923c', '#f87171', '#60a5fa',
-  ];
+  const AGENT_COLORS = ['#6c63ff', '#34d399', '#fb923c', '#f87171', '#60a5fa'];
   function agentColor(name) {
     if (!session) return AGENT_COLORS[0];
     const idx = session.persona_names.indexOf(name);
@@ -263,23 +288,19 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
   }
 
   // ---- render ----
-
-  if (!session) return <div className="card">Loading session…</div>;
+  if (!session) return <div className="card">Loading session...</div>;
 
   if (countdown !== null) {
     return (
       <div className="countdown-overlay">
         <p style={{ color: 'var(--text-dim)', marginBottom: 8 }}>
-          Topic:{' '}
-          <strong style={{ color: 'var(--text)' }}>{session.topic}</strong>
+          Topic: <strong style={{ color: 'var(--text)' }}>{session.topic}</strong>
         </p>
         <div className="countdown-number">{countdown}</div>
-        <div className="countdown-label">
-          Thinking time — gather your thoughts
-        </div>
+        <div className="countdown-label">Thinking time — gather your thoughts</div>
         {!isSupported && (
           <p style={{ color: 'var(--orange)', marginTop: 16, fontSize: '0.85rem' }}>
-            Your browser doesn't support speech recognition. Use Chrome or Edge for voice mode.
+            Your browser doesn't support speech recognition. Use Chrome or Edge.
           </p>
         )}
       </div>
@@ -288,16 +309,13 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
 
   const isLive = status === 'live' || status === 'wrapping';
   const totalSec = session.duration_minutes * 60;
-  const agentSpeaking = activeSpeaker && activeSpeaker !== 'student';
 
   return (
     <div className="voice-session">
       {/* status bar */}
       <div className="status-bar">
         <div className="status-label">
-          <span
-            className={`status-dot ${status === 'wrapping' ? 'wrapping' : ''} ${status === 'ended' ? 'ended' : ''}`}
-          />
+          <span className={`status-dot ${status === 'wrapping' ? 'wrapping' : ''} ${status === 'ended' ? 'ended' : ''}`} />
           <span>
             {status === 'live' && 'Live'}
             {status === 'wrapping' && 'Wrap up!'}
@@ -309,20 +327,14 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
             {formatTime(elapsed)} / {formatTime(totalSec)}
           </span>
           {isLive && (
-            <button
-              className="btn btn-danger"
-              onClick={handleEnd}
-              style={{ padding: '4px 12px', fontSize: '0.75rem' }}
-            >
+            <button className="btn btn-danger" onClick={handleEnd}
+              style={{ padding: '4px 12px', fontSize: '0.75rem' }}>
               End
             </button>
           )}
           {status === 'ended' && (
-            <button
-              className="btn btn-primary"
-              onClick={() => onEnd(sessionId)}
-              style={{ padding: '4px 12px', fontSize: '0.75rem' }}
-            >
+            <button className="btn btn-primary" onClick={() => onEnd(sessionId)}
+              style={{ padding: '4px 12px', fontSize: '0.75rem' }}>
               View Report
             </button>
           )}
@@ -334,124 +346,82 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
 
       {/* participant ring */}
       <div className="participant-ring">
-        {/* student circle */}
-        <div
-          className={`participant you ${activeSpeaker === 'student' ? 'speaking' : ''} ${isListening ? 'listening' : ''}`}
-        >
-          <div className="participant-avatar" style={{ borderColor: 'var(--accent)' }}>
-            🎤
-          </div>
+        <div className={`participant you ${activeSpeaker === 'student' ? 'speaking' : ''} ${isListening ? 'listening' : ''}`}>
+          <div className="participant-avatar" style={{ borderColor: 'var(--accent)' }}>You</div>
           <div className="participant-name">You</div>
-          {isListening && !activeSpeaker && (
-            <div className="mic-indicator">mic on</div>
-          )}
         </div>
-
-        {/* agent circles */}
         {session.persona_names.map((name) => {
           const p = personas[name];
           const color = agentColor(name);
-          const isSpeaking = activeSpeaker === name;
           return (
-            <div
-              key={name}
-              className={`participant ${isSpeaking ? 'speaking' : ''}`}
-            >
-              <div
-                className="participant-avatar"
-                style={{ borderColor: color }}
-              >
-                {name[0]}
-              </div>
+            <div key={name} className={`participant ${activeSpeaker === name ? 'speaking' : ''}`}>
+              <div className="participant-avatar" style={{ borderColor: color }}>{name[0]}</div>
               <div className="participant-name">{name}</div>
-              {p && (
-                <div className="participant-archetype">
-                  {p.archetype.replace(/_/g, ' ')}
-                </div>
-              )}
+              {p && <div className="participant-archetype">{p.archetype.replace(/_/g, ' ')}</div>}
             </div>
           );
         })}
       </div>
 
-      {/* live interim display */}
+      {/* Mic control area */}
+      {isLive && micAllowed && (
+        <div className="mic-control">
+          {agentsTalking ? (
+            <button className="interrupt-btn" onClick={handleInterrupt}>
+              <span className="interrupt-icon">&#9995;</span>
+              <span>Tap to Interrupt & Speak</span>
+              <span className="interrupt-hint">or press Space</span>
+            </button>
+          ) : isListening ? (
+            <div className="mic-live">
+              <span className="mic-live-dot" />
+              <span>Listening — speak now</span>
+            </div>
+          ) : (
+            <div className="mic-starting">Mic starting...</div>
+          )}
+        </div>
+      )}
+
+      {isLive && !micAllowed && (
+        <div className="mic-warning">
+          <p>Mic access required for voice mode</p>
+          <button className="btn btn-primary" onClick={requestMic}>Allow Microphone</button>
+        </div>
+      )}
+
+      {/* interim text */}
       {interimText && (
         <div className="interim-text">
           <span className="interim-label">You:</span> {interimText}
         </div>
       )}
 
-      {/* Tap to Speak button — visible when agents are talking */}
-      {isLive && micAllowed && agentSpeaking && (
-        <button className="tap-to-speak-btn" onClick={handleTapToSpeak}>
-          Tap to Speak (interrupts agent)
-        </button>
-      )}
-
-      {/* mic status */}
-      {isLive && micAllowed && !agentSpeaking && (
-        <div className={`mic-status ${isListening ? 'active' : 'inactive'}`}>
-          {isListening ? 'Listening...' : 'Mic restarting...'}
-        </div>
-      )}
-
-      {/* mic not allowed warning */}
-      {isLive && !micAllowed && !isListening && (
-        <div className="mic-warning">
-          <p>Mic access required for voice mode</p>
-          <button className="btn btn-primary" onClick={requestMic}>
-            Allow Microphone
-          </button>
-        </div>
-      )}
-
-      {/* scrollable transcript */}
+      {/* transcript */}
       <div className="voice-transcript">
         <div className="transcript-header">Live Transcript</div>
         <div className="transcript-scroll">
           {turns.map((t) => (
-            <div
-              key={t.id}
-              className={`transcript-line ${t.speaker === 'student' ? 'is-student' : ''}`}
-            >
-              <span
-                className="transcript-speaker"
-                style={{
-                  color:
-                    t.speaker === 'student'
-                      ? 'var(--accent)'
-                      : agentColor(t.speaker),
-                }}
-              >
+            <div key={t.id} className={`transcript-line ${t.speaker === 'student' ? 'is-student' : ''}`}>
+              <span className="transcript-speaker" style={{
+                color: t.speaker === 'student' ? 'var(--accent)' : agentColor(t.speaker),
+              }}>
                 {t.speaker === 'student' ? 'You' : t.speaker}
               </span>
-              {t.move && t.speaker !== 'student' && (
-                <span className="move-tag">{t.move}</span>
-              )}
+              {t.move && t.speaker !== 'student' && <span className="move-tag">{t.move}</span>}
               <span className="transcript-text">{t.text}</span>
             </div>
           ))}
-          {status === 'wrapping' && (
-            <div className="transcript-line system">
-              Time is almost up — wrap up your points!
-            </div>
-          )}
-          {status === 'ended' && (
-            <div className="transcript-line system">Discussion ended.</div>
-          )}
+          {status === 'wrapping' && <div className="transcript-line system">Time is almost up!</div>}
+          {status === 'ended' && <div className="transcript-line system">Discussion ended.</div>}
           <div ref={transcriptEnd} />
         </div>
       </div>
 
-      {/* post-session actions */}
       {status === 'ended' && (
         <div style={{ paddingTop: 12, display: 'flex', gap: 8, justifyContent: 'center' }}>
-          <button className="btn btn-primary" onClick={() => onEnd(sessionId)}>
-            View Report
-          </button>
-          <button className="btn btn-secondary" onClick={onBack}>
-            New Session
-          </button>
+          <button className="btn btn-primary" onClick={() => onEnd(sessionId)}>View Report</button>
+          <button className="btn btn-secondary" onClick={onBack}>New Session</button>
         </div>
       )}
     </div>
