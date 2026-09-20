@@ -1601,7 +1601,6 @@ select:focus, input:focus, textarea:focus {
 .timeline-header-row {
   display: flex;
   align-items: center;
-  padding-left: 90px;
   gap: 2px;
   margin-bottom: 4px;
 }

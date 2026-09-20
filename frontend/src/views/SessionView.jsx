@@ -50,6 +50,9 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
   const transcriptEnd = useRef(null);
   const voiceMapRef = useRef({});
   const personasRef = useRef({});
+  const micStreamRef = useRef(null);
+  const micRestartTimer = useRef(null);
+  const userSpeakingRef = useRef(false);
 
   // Keep refs in sync with state so processQueue always has fresh values
   voiceMapRef.current = voiceMap;
@@ -61,17 +64,33 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
       onInterim: handleInterim,
     });
 
-  // ---- mic control: on when we want to listen, off during TTS ----
+  // ---- mic control ----
   function micOn() {
-    if (micAllowed) startMic();
+    if (!micAllowed) return;
+    clearTimeout(micRestartTimer.current);
+    startMic();
+    console.log('[mic] ON — listening');
   }
+
+  function micOnDelayed(ms = 600) {
+    if (!micAllowed) return;
+    clearTimeout(micRestartTimer.current);
+    micRestartTimer.current = setTimeout(() => {
+      startMic();
+      console.log('[mic] ON (delayed) — listening');
+    }, ms);
+  }
+
   function micOff() {
+    clearTimeout(micRestartTimer.current);
     stopMic();
+    console.log('[mic] OFF');
   }
 
   // ---- speech handlers ----
   function handleTranscript(text) {
     if (!text) return;
+    console.log('[mic] GOT TRANSCRIPT:', text);
     setInterimText('');
 
     // Barge-in: cancel any agent TTS
@@ -80,6 +99,8 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
     isSpeakingRef.current = false;
     setAgentsTalking(false);
     setActiveSpeaker('student');
+
+    userSpeakingRef.current = false;
 
     if (sendingRef.current) {
       speechQueueRef.current.push(text);
@@ -91,12 +112,14 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
   function handleInterim(text) {
     setInterimText(text);
     setActiveSpeaker('student');
+    userSpeakingRef.current = true;
   }
 
   // ---- send student message ----
   async function sendStudentMessage(text) {
     sendingRef.current = true;
-    micOff(); // stop listening while processing
+    // DON'T stop mic here — let it keep listening for more input while we wait
+    // for the API. The mic will be stopped when TTS starts playing.
     try {
       const res = await api.sendMessage(sessionId, text);
       setTurns((prev) => [...prev, ...res.new_turns]);
@@ -108,6 +131,7 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
         ttsQueueRef.current.push(t);
       }
       if (agentTurns.length > 0) {
+        micOff();
         setAgentsTalking(true);
       }
       processQueue();
@@ -118,7 +142,6 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
       }
     } catch (e) {
       console.error('send error:', e);
-      micOn(); // restore mic on error
     } finally {
       sendingRef.current = false;
       if (speechQueueRef.current.length > 0) {
@@ -134,14 +157,16 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
     if (isSpeakingRef.current) return;
     const next = ttsQueueRef.current.shift();
     if (!next) {
-      // All agents done — turn mic back on
+      // All agents done — turn mic back on after a delay so Chrome
+      // recovers from the TTS/STT hardware conflict
       setAgentsTalking(false);
       setActiveSpeaker(null);
-      micOn();
+      micOnDelayed(700);
       return;
     }
 
     isSpeakingRef.current = true;
+    micOff();
     const voice = voiceMapRef.current[next.speaker];
     const archetype = personasRef.current[next.speaker]?.archetype;
     const params = VOICE_PARAMS[archetype] || {};
@@ -167,7 +192,8 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
     isSpeakingRef.current = false;
     setAgentsTalking(false);
     setActiveSpeaker(null);
-    micOn();
+    // Delay mic start so Chrome releases audio after TTS cancel
+    micOnDelayed(500);
   }
 
   // Spacebar shortcut for interrupt
@@ -205,7 +231,12 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
     return () => {
       clearInterval(tickRef.current);
       clearInterval(clockRef.current);
+      clearTimeout(micRestartTimer.current);
       cancelAllSpeech();
+      // Release mic stream
+      if (micStreamRef.current) {
+        micStreamRef.current.getTracks().forEach(t => t.stop());
+      }
     };
   }, [sessionId]);
 
@@ -244,10 +275,15 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
 
   async function requestMic() {
     try {
-      await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Release the stream immediately — we only needed the permission.
+      // Holding the stream open competes with SpeechRecognition for the mic.
+      stream.getTracks().forEach(t => t.stop());
       setMicAllowed(true);
+      console.log('[mic] Permission granted, starting recognition');
       startMic();
-    } catch {
+    } catch (err) {
+      console.warn('[mic] Permission denied:', err);
       setMicAllowed(false);
     }
   }
@@ -270,9 +306,14 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
           for (const t of res.new_turns) {
             ttsQueueRef.current.push(t);
           }
-          micOff();
-          setAgentsTalking(true);
-          processQueue();
+          // Only kill mic and start TTS if user is NOT actively speaking.
+          // If user has interim text or is mid-send, queue the turns
+          // but don't interrupt — they'll play after user finishes.
+          if (!userSpeakingRef.current && !sendingRef.current) {
+            micOff();
+            setAgentsTalking(true);
+            processQueue();
+          }
         }
         setStatus(res.status);
         if (res.status === 'ended') {

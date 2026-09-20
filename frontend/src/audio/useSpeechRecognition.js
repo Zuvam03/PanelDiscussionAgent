@@ -13,6 +13,7 @@ export function useSpeechRecognition({ onResult, onInterim }) {
   const onResultRef = useRef(onResult);
   const onInterimRef = useRef(onInterim);
   const restartRef = useRef(null);
+  const retryCount = useRef(0);
 
   onResultRef.current = onResult;
   onInterimRef.current = onInterim;
@@ -31,7 +32,15 @@ export function useSpeechRecognition({ onResult, onInterim }) {
     rec.lang = 'en-US';
     rec.maxAlternatives = 1;
 
-    rec.onstart = () => setIsListening(true);
+    rec.onstart = () => {
+      setIsListening(true);
+      retryCount.current = 0;
+      console.log('[STT] Recognition started');
+    };
+
+    rec.onaudiostart = () => {
+      console.log('[STT] Audio capture started');
+    };
 
     rec.onresult = (event) => {
       let interim = '';
@@ -39,6 +48,7 @@ export function useSpeechRecognition({ onResult, onInterim }) {
         const r = event.results[i];
         if (r.isFinal) {
           const text = r[0].transcript.trim();
+          console.log('[STT] Final result:', text, '(confidence:', r[0].confidence, ')');
           if (text) onResultRef.current?.(text);
         } else {
           interim += r[0].transcript;
@@ -48,32 +58,51 @@ export function useSpeechRecognition({ onResult, onInterim }) {
     };
 
     rec.onerror = (e) => {
-      if (e.error !== 'aborted' && e.error !== 'no-speech') {
-        console.warn('[mic] error:', e.error);
+      console.warn('[STT] Error:', e.error, e.message);
+      if (e.error === 'not-allowed') {
+        wantRef.current = false;
+        setIsListening(false);
+        return;
       }
     };
 
     rec.onend = () => {
+      console.log('[STT] Recognition ended, want:', wantRef.current);
       setIsListening(false);
       recognitionRef.current = null;
       if (wantRef.current) {
+        retryCount.current += 1;
+        // Exponential backoff: 300ms, 600ms, 1200ms, cap at 2s
+        const delay = Math.min(300 * Math.pow(2, retryCount.current - 1), 2000);
+        console.log('[STT] Auto-restart in', delay, 'ms (retry', retryCount.current, ')');
         clearTimeout(restartRef.current);
         restartRef.current = setTimeout(() => {
           if (wantRef.current) startRecognition();
-        }, 400);
+        }, delay);
       }
     };
 
     recognitionRef.current = rec;
     try {
       rec.start();
-    } catch {
+    } catch (err) {
+      console.warn('[STT] Failed to start:', err);
       recognitionRef.current = null;
+      // Retry after a delay
+      if (wantRef.current && retryCount.current < 5) {
+        retryCount.current += 1;
+        const delay = Math.min(500 * retryCount.current, 2000);
+        clearTimeout(restartRef.current);
+        restartRef.current = setTimeout(() => {
+          if (wantRef.current) startRecognition();
+        }, delay);
+      }
     }
   }, []);
 
   const start = useCallback(() => {
     wantRef.current = true;
+    retryCount.current = 0;
     clearTimeout(restartRef.current);
     startRecognition();
   }, [startRecognition]);
