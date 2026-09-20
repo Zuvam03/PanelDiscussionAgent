@@ -53,6 +53,8 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
   const micStreamRef = useRef(null);
   const micRestartTimer = useRef(null);
   const userSpeakingRef = useRef(false);
+  const userSpeakingTimeout = useRef(null);
+  const wasAgentsTalking = useRef(false);
 
   // Keep refs in sync with state so processQueue always has fresh values
   voiceMapRef.current = voiceMap;
@@ -92,6 +94,7 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
     if (!text) return;
     console.log('[mic] GOT TRANSCRIPT:', text);
     setInterimText('');
+    clearTimeout(userSpeakingTimeout.current);
 
     // Barge-in: cancel any agent TTS
     cancelAllSpeech();
@@ -113,6 +116,28 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
     setInterimText(text);
     setActiveSpeaker('student');
     userSpeakingRef.current = true;
+    // Safety timer: if no final result arrives within 4s of the last
+    // interim, assume recognition silently died and reset the flag.
+    // Without this, userSpeakingRef stays true forever and blocks
+    // all agent TTS from playing.
+    clearTimeout(userSpeakingTimeout.current);
+    userSpeakingTimeout.current = setTimeout(() => {
+      if (userSpeakingRef.current) {
+        console.log('[mic] userSpeaking safety reset — no final result received');
+        userSpeakingRef.current = false;
+        setInterimText('');
+        flushQueuedTurns();
+      }
+    }, 4000);
+  }
+
+  function flushQueuedTurns() {
+    if (ttsQueueRef.current.length > 0 && !isSpeakingRef.current && !sendingRef.current) {
+      console.log('[mic] Flushing', ttsQueueRef.current.length, 'queued agent turns');
+      micOff();
+      setAgentsTalking(true);
+      processQueue();
+    }
   }
 
   // ---- send student message ----
@@ -130,7 +155,9 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
       for (const t of agentTurns) {
         ttsQueueRef.current.push(t);
       }
-      if (agentTurns.length > 0) {
+      // If there are any queued turns (from this response OR from earlier
+      // ticks that were deferred while user was speaking), start playing them
+      if (ttsQueueRef.current.length > 0) {
         micOff();
         setAgentsTalking(true);
       }
@@ -157,14 +184,18 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
     if (isSpeakingRef.current) return;
     const next = ttsQueueRef.current.shift();
     if (!next) {
-      // All agents done — turn mic back on after a delay so Chrome
-      // recovers from the TTS/STT hardware conflict
-      setAgentsTalking(false);
       setActiveSpeaker(null);
-      micOnDelayed(700);
+      // Only restart mic if agents were talking (TTS was active).
+      // If no agents spoke, mic is already running — don't touch it.
+      if (wasAgentsTalking.current) {
+        setAgentsTalking(false);
+        wasAgentsTalking.current = false;
+        micOnDelayed(700);
+      }
       return;
     }
 
+    wasAgentsTalking.current = true;
     isSpeakingRef.current = true;
     micOff();
     const voice = voiceMapRef.current[next.speaker];
@@ -190,10 +221,16 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
     cancelAllSpeech();
     ttsQueueRef.current = [];
     isSpeakingRef.current = false;
+    wasAgentsTalking.current = false;
     setAgentsTalking(false);
     setActiveSpeaker(null);
-    // Delay mic start so Chrome releases audio after TTS cancel
-    micOnDelayed(500);
+    // Try starting mic immediately — it may work if Chrome releases
+    // audio fast enough. Schedule a fallback restart in case it doesn't.
+    micOn();
+    micRestartTimer.current = setTimeout(() => {
+      console.log('[mic] Interrupt fallback restart');
+      startMic();
+    }, 600);
   }
 
   // Spacebar shortcut for interrupt
@@ -232,6 +269,7 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
       clearInterval(tickRef.current);
       clearInterval(clockRef.current);
       clearTimeout(micRestartTimer.current);
+      clearTimeout(userSpeakingTimeout.current);
       cancelAllSpeech();
       // Release mic stream
       if (micStreamRef.current) {
