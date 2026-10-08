@@ -1,0 +1,105 @@
+# Model United Nations mode config.
+# Delegates are assigned nations with specific interests and must argue from
+# that nation's perspective. Formal procedure, moderated/unmoderated caucus,
+# resolutions, and points of order.
+
+name: mun
+display_name: Model United Nations
+description: >
+  MUN committee simulation. Each participant represents a nation with assigned
+  interests and policy positions. Formal speaking list, moderated caucus, and
+  working paper mechanics. Practice solo against AI delegates.
+
+defaults:
+  num_agents: 4
+  duration_minutes: 12
+  thinking_seconds: 60
+  wrap_up_fraction: 0.80
+  word_quota: 400
+
+turn_taking:
+  max_agent_turns_per_burst: 2
+  floor_threshold: 0.30
+  silence_tick_seconds: 10
+  silence_event_after_ticks: 3
+  chime_in_chance: 0.3
+
+moves:
+  - open
+  - new_point
+  - build
+  - disagree
+  - question
+  - summary
+  - redirect
+  - interrupt
+  - point_of_order
+  - motion
+  - yield
+
+# Each topic includes the committee context
+topics:
+  - "DISEC: Regulation of autonomous weapons systems in armed conflict"
+  - "ECOFIN: Addressing global debt crisis in developing nations"
+  - "SOCHUM: Protecting digital privacy rights in the age of AI surveillance"
+  - "UNSC: De-escalation of tensions in the South China Sea"
+  - "UNHRC: Ensuring rights of climate refugees under international law"
+  - "WHO: Pandemic preparedness and equitable vaccine distribution"
+  - "UNGA: Reform of the United Nations Security Council"
+  - "UNEP: Transition to renewable energy in fossil-fuel-dependent economies"
+
+# Nation assignments for AI delegates — each carries policy positions
+nations:
+  - name: United States
+    code: US
+    bloc: western
+    interests: "Free market solutions, security primacy, technology leadership, bilateral agreements"
+  - name: China
+    code: CN
+    bloc: eastern
+    interests: "Sovereignty, non-interference, Belt and Road, multilateral South-South cooperation"
+  - name: India
+    code: IN
+    bloc: nam
+    interests: "Development equity, technology transfer, climate justice, reformed multilateralism"
+  - name: Germany
+    code: DE
+    bloc: eu
+    interests: "Rules-based order, climate action, human rights, EU consensus building"
+  - name: Brazil
+    code: BR
+    bloc: nam
+    interests: "Amazon sovereignty, agricultural trade, South-South cooperation, BRICS alignment"
+  - name: Nigeria
+    code: NG
+    bloc: au
+    interests: "African representation, development aid, peacekeeping, debt relief"
+  - name: Russia
+    code: RU
+    bloc: eastern
+    interests: "Sovereignty, veto protection, energy politics, counter-Western narratives"
+  - name: Japan
+    code: JP
+    bloc: western
+    interests: "Technology standards, maritime security, UN reform, development assistance"
+
+scoring:
+  categories:
+    - name: Position Accuracy
+      weight: 0.20
+      description: "How well does the delegate represent their assigned nation's actual interests?"
+    - name: Diplomatic Language
+      weight: 0.15
+      description: "Use of formal MUN procedure, proper address, and diplomatic register"
+    - name: Coalition Building
+      weight: 0.20
+      description: "Ability to find allies, build blocs, and negotiate compromises"
+    - name: Resolution Drafting
+      weight: 0.15
+      description: "Quality of proposed solutions and operative clauses"
+    - name: Rebuttal Quality
+      weight: 0.15
+      description: "Effectiveness of responses to opposing positions"
+    - name: Overall Persuasion
+      weight: 0.15
+      description: "How convincing and influential was the delegate overall?"

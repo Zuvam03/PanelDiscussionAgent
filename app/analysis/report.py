@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 from collections import Counter, defaultdict
 
+from ..config import ModeConfig
 from ..models import (
     Event,
     EventType,
@@ -20,6 +21,7 @@ from ..models import (
 )
 from ..providers.base import LLMProvider
 from .coaching import generate_coaching
+from .judging import compute_scoreboard, run_ai_judge
 
 log = logging.getLogger(__name__)
 
@@ -28,6 +30,7 @@ STUDENT = "student"
 
 async def generate_report(
     session: Session,
+    mode: ModeConfig,
     analysis_provider: LLMProvider | None = None,
     personas: dict | None = None,
 ) -> Report:
@@ -47,6 +50,13 @@ async def generate_report(
             session, analysis_provider, personas or {},
         )
 
+    scoreboard = None
+    if mode.scoring and mode.scoring.categories:
+        if not session.judge_scores:
+            ai_scores = await run_ai_judge(session, mode, analysis_provider or _mock_provider())
+            session.judge_scores.extend(ai_scores)
+        scoreboard = compute_scoreboard(session, mode)
+
     return Report(
         session_id=session.id,
         generated_by=analysis_provider.name if (coaching and analysis_provider) else "rules",
@@ -57,7 +67,13 @@ async def generate_report(
         swot=swot,
         next_actions=actions,
         coaching=coaching,
+        scoreboard=scoreboard,
     )
+
+
+def _mock_provider():
+    from ..providers.mock_llm import MockLLMProvider
+    return MockLLMProvider()
 
 
 def _unique_speakers(session: Session) -> list[str]:

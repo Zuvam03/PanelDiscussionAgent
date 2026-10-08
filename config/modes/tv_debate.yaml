@@ -1,0 +1,76 @@
+# TV Debate mode config.
+# Open-format debate where the goal is to influence the audience.
+# Less formal than parliamentary, more aggressive, audience vote tracking.
+
+name: tv_debate
+display_name: TV Debate
+description: >
+  TV-style panel debate. Open topic, loose moderation, audience influence
+  tracking. The goal is to win the audience — convince, persuade, get
+  buy-ins. Think prime-time political panel shows.
+
+defaults:
+  num_agents: 3
+  duration_minutes: 10
+  thinking_seconds: 30
+  wrap_up_fraction: 0.85
+  word_quota: 350
+
+turn_taking:
+  max_agent_turns_per_burst: 2
+  floor_threshold: 0.25
+  silence_tick_seconds: 6
+  silence_event_after_ticks: 3
+  chime_in_chance: 0.5
+
+moves:
+  - open
+  - new_point
+  - build
+  - disagree
+  - question
+  - summary
+  - redirect
+  - interrupt
+  - appeal_to_audience
+  - factcheck
+  - personal_story
+
+topics:
+  - "Should governments regulate AI development or let the market decide?"
+  - "Is nationalism rising because globalization failed the working class?"
+  - "Should college education be free for everyone?"
+  - "Are electric vehicles actually better for the environment?"
+  - "Should social media companies be held liable for content on their platforms?"
+  - "Is remote work killing innovation or enabling it?"
+  - "Should cryptocurrency be banned or regulated?"
+  - "Is the traditional media dead?"
+
+scoring:
+  categories:
+    - name: Audience Appeal
+      weight: 0.25
+      description: "Ability to connect with and persuade the audience"
+    - name: Argument Strength
+      weight: 0.20
+      description: "Quality and substance of points made"
+    - name: Quick Wit
+      weight: 0.15
+      description: "Speed and quality of rebuttals and comebacks"
+    - name: Emotional Intelligence
+      weight: 0.15
+      description: "Reading the room and adjusting approach"
+    - name: Factual Accuracy
+      weight: 0.15
+      description: "Use of credible data and correct information"
+    - name: Stage Presence
+      weight: 0.10
+      description: "Commanding attention and holding the floor"
+
+vote_mechanics:
+  influence_tracking: true
+  audience_size: 100
+  starting_split: null  # evenly divided among participants
+  swing_per_strong_point: 4
+  swing_per_weak_point: -2
+  live_poll_intervals: 3  # show audience split 3 times during session

@@ -1,14 +1,16 @@
-"""FastAPI server — the single entry point for the Phase 0 web app.
+"""FastAPI server — the single entry point for the web app.
 
 Endpoints:
   GET  /api/config          → mode config, topic list, persona list
-  POST /api/sessions        → create a new session
+  GET  /api/modes           → all available modes with full config
+  POST /api/sessions        → create a new session (supports all modes)
   POST /api/sessions/{id}/start → move to LIVE
   POST /api/sessions/{id}/message → student sends a message
   POST /api/sessions/{id}/tick    → silence-tick (frontend polls)
   POST /api/sessions/{id}/end    → force-end the session
   GET  /api/sessions/{id}        → full session state
   GET  /api/sessions/{id}/report → post-session report
+  POST /api/sessions/{id}/judge  → submit human judge scores
   GET  /api/sessions              → session history list
   DELETE /api/sessions/{id}      → delete session & data
 """
@@ -26,13 +28,20 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from .analysis.report import generate_report
-from .config import load_mode, load_personas
-from .models import Session, SessionStatus
+from .config import load_mode, load_all_modes, load_personas
+from .models import (
+    JudgeScore,
+    NationAssignment,
+    RoleAssignment,
+    Session,
+    SessionStatus,
+    VoteState,
+)
 from .orchestrator.engine import Orchestrator
 from .providers.factory import get_analysis_provider, get_live_provider
 from .storage.db import SessionRepository
 
-app = FastAPI(title="PanelPrep", version="0.1.0")
+app = FastAPI(title="PanelPrep", version="0.2.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -74,18 +83,38 @@ class CreateSessionRequest(BaseModel):
     persona_names: Optional[list[str]] = None
     duration_minutes: Optional[float] = None
     num_agents: Optional[int] = None
+    student_nation: Optional[str] = None
+    student_role: Optional[str] = None
+    student_side: Optional[str] = None
 
 class MessageRequest(BaseModel):
     text: str
 
+class JudgeScoreRequest(BaseModel):
+    judge_id: str
+    speaker: str
+    category: str
+    score: float
+    comment: str = ""
+
+class JudgeSubmitRequest(BaseModel):
+    judge_id: str
+    scores: list[JudgeScoreRequest]
+
 # -------------------------------------------------------------------- routes
 
+@app.get("/api/modes")
+def get_modes():
+    modes = load_all_modes()
+    return {name: m.model_dump() for name, m in modes.items()}
+
+
 @app.get("/api/config")
-def get_config():
-    mode = load_mode("gd")
+def get_config(mode: str = "gd"):
+    m = load_mode(mode)
     personas = load_personas()
     return {
-        "mode": mode.model_dump(),
+        "mode": m.model_dump(),
         "personas": {k: v.model_dump() for k, v in personas.items()},
     }
 
@@ -114,6 +143,53 @@ def create_session(req: CreateSessionRequest):
         llm_provider=provider.name,
         word_quota=mode.defaults.word_quota,
     )
+
+    if req.mode == "mun" and mode.nations:
+        available_nations = list(mode.nations)
+        rng = random.Random()
+        rng.shuffle(available_nations)
+        if req.student_nation:
+            session.student_nation = req.student_nation
+            available_nations = [n for n in available_nations if n.name != req.student_nation]
+        for i, agent_name in enumerate(chosen):
+            if i < len(available_nations):
+                nc = available_nations[i]
+                session.nation_assignments.append(NationAssignment(
+                    speaker=agent_name, nation=nc.name, code=nc.code, interests=nc.interests,
+                ))
+
+    elif req.mode == "parliamentary" and mode.roles:
+        sides = list(mode.roles.keys())
+        if req.student_side and req.student_role:
+            session.student_side = req.student_side
+            session.student_role = req.student_role
+        all_roles = []
+        for side_name, role_list in mode.roles.items():
+            for rc in role_list:
+                all_roles.append((side_name, rc))
+        random.shuffle(all_roles)
+        assigned = 0
+        for agent_name in chosen:
+            if assigned < len(all_roles):
+                side_name, rc = all_roles[assigned]
+                session.role_assignments.append(RoleAssignment(
+                    speaker=agent_name, side=side_name, title=rc.title, code=rc.code,
+                ))
+                assigned += 1
+
+    if mode.vote_mechanics and mode.vote_mechanics.influence_tracking:
+        vm = mode.vote_mechanics
+        all_speakers = list(chosen) + ["student"]
+        split = vm.starting_split
+        if split is None:
+            per_speaker = vm.audience_size / len(all_speakers)
+            scores = {s: round(per_speaker, 1) for s in all_speakers}
+        else:
+            scores = {s: float(split) for s in all_speakers}
+        session.vote_state = VoteState(
+            audience_size=vm.audience_size, scores=scores,
+        )
+
     repo.save(session)
     return session.model_dump()
 
@@ -184,11 +260,32 @@ async def get_report(session_id: str, regenerate: bool = False):
         raise HTTPException(404, "session not found")
     if session.status != SessionStatus.ENDED:
         raise HTTPException(400, "session has not ended yet")
+    mode = load_mode(session.mode)
     personas = {k: v.model_dump() for k, v in load_personas().items()}
     analysis_provider = get_analysis_provider()
-    report = await generate_report(session, analysis_provider, personas)
+    report = await generate_report(session, mode, analysis_provider, personas)
     repo.save_report(session_id, report)
     return report.model_dump()
+
+
+@app.post("/api/sessions/{session_id}/judge")
+def submit_judge_scores(session_id: str, req: JudgeSubmitRequest):
+    session = repo.get(session_id)
+    if session is None:
+        raise HTTPException(404, "session not found")
+    if session.status != SessionStatus.ENDED:
+        raise HTTPException(400, "session must be ended before judging")
+    for s in req.scores:
+        session.judge_scores.append(JudgeScore(
+            judge_id=req.judge_id,
+            judge_type="human",
+            speaker=s.speaker,
+            category=s.category,
+            score=max(0, min(s.score, 10)),
+            comment=s.comment,
+        ))
+    repo.save(session)
+    return {"accepted": len(req.scores), "total_scores": len(session.judge_scores)}
 
 
 @app.get("/api/sessions")

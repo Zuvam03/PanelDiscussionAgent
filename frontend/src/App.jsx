@@ -1,16 +1,25 @@
 import { useState } from 'react';
 import './index.css';
+import ModeSelectView from './views/ModeSelectView';
 import SetupView from './views/SetupView';
 import SessionView from './views/SessionView';
 import ReportView from './views/ReportView';
 import HistoryView from './views/HistoryView';
+import JudgeView from './views/JudgeView';
 
 export default function App() {
-  const [view, setView] = useState('setup');
+  const [view, setView] = useState('modes');
   const [sessionId, setSessionId] = useState(null);
+  const [selectedMode, setSelectedMode] = useState(null);
 
-  function goSetup() {
+  function goModes() {
     setSessionId(null);
+    setSelectedMode(null);
+    setView('modes');
+  }
+
+  function goSetup(mode) {
+    setSelectedMode(mode);
     setView('setup');
   }
 
@@ -28,14 +37,19 @@ export default function App() {
     setView('history');
   }
 
+  function goJudge(id) {
+    setSessionId(id);
+    setView('judge');
+  }
+
   return (
     <div className="app">
       <header className="header">
-        <h1>⚡ PanelPrep</h1>
+        <h1 onClick={goModes} style={{ cursor: 'pointer' }}>PanelPrep</h1>
         <nav>
           <button
-            className={`btn btn-nav ${view === 'setup' ? 'active' : ''}`}
-            onClick={goSetup}
+            className={`btn btn-nav ${view === 'modes' || view === 'setup' ? 'active' : ''}`}
+            onClick={goModes}
           >
             New Session
           </button>
@@ -48,19 +62,25 @@ export default function App() {
         </nav>
       </header>
       <main className="main">
-        {view === 'setup' && <SetupView onStart={goSession} />}
+        {view === 'modes' && <ModeSelectView onSelect={goSetup} />}
+        {view === 'setup' && (
+          <SetupView mode={selectedMode} onStart={goSession} onBack={goModes} />
+        )}
         {view === 'session' && (
           <SessionView
             sessionId={sessionId}
             onEnd={goReport}
-            onBack={goSetup}
+            onBack={goModes}
           />
         )}
         {view === 'report' && (
-          <ReportView sessionId={sessionId} onBack={goSetup} />
+          <ReportView sessionId={sessionId} onBack={goModes} onJudge={goJudge} />
         )}
         {view === 'history' && (
-          <HistoryView onSelect={goReport} onNew={goSetup} />
+          <HistoryView onSelect={goReport} onNew={goModes} />
+        )}
+        {view === 'judge' && (
+          <JudgeView sessionId={sessionId} onBack={() => goReport(sessionId)} />
         )}
       </main>
     </div>

@@ -36,7 +36,7 @@ export default function HistoryView({ onSelect, onNew }) {
 
       {sessions.length === 0 ? (
         <div className="card" style={{ textAlign: 'center', color: 'var(--text-dim)' }}>
-          <p>No sessions yet. Start your first GD practice!</p>
+          <p>No sessions yet. Start your first practice session!</p>
         </div>
       ) : (
         sessions.map((s) => (
@@ -48,8 +48,11 @@ export default function HistoryView({ onSelect, onNew }) {
             <div>
               <div className="history-topic">{s.topic}</div>
               <div className="history-meta">
+                {s.mode && s.mode !== 'gd' && (
+                  <span className="history-mode-tag">{s.mode.toUpperCase()}</span>
+                )}
                 {formatDate(s.created_at)} · {s.status}
-                {s.has_report && ' · 📊 Report available'}
+                {s.has_report && ' · Report available'}
               </div>
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>

@@ -6,6 +6,7 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 from pathlib import Path
+from typing import Optional
 
 import yaml
 from dotenv import load_dotenv
@@ -36,6 +37,38 @@ class ModeDefaults(BaseModel):
     word_quota: int = 250
 
 
+class ScoringCategory(BaseModel):
+    name: str
+    weight: float
+    description: str = ""
+
+
+class ScoringConfig(BaseModel):
+    categories: list[ScoringCategory] = []
+
+
+class NationConfig(BaseModel):
+    name: str
+    code: str
+    bloc: str = ""
+    interests: str = ""
+
+
+class RoleConfig(BaseModel):
+    title: str
+    code: str
+    duty: str = ""
+
+
+class VoteMechanics(BaseModel):
+    influence_tracking: bool = False
+    audience_size: int = 100
+    starting_split: Optional[float] = 50
+    swing_per_strong_point: float = 5
+    swing_per_weak_point: float = -3
+    live_poll_intervals: int = 0
+
+
 class ModeConfig(BaseModel):
     name: str
     display_name: str
@@ -44,6 +77,10 @@ class ModeConfig(BaseModel):
     turn_taking: TurnTakingConfig = TurnTakingConfig()
     moves: list[str] = []
     topics: list[str] = []
+    nations: list[NationConfig] = []
+    roles: Optional[dict[str, list[RoleConfig]]] = None
+    scoring: Optional[ScoringConfig] = None
+    vote_mechanics: Optional[VoteMechanics] = None
 
 
 @lru_cache
@@ -51,6 +88,15 @@ def load_mode(name: str = "gd") -> ModeConfig:
     path = CONFIG_DIR / "modes" / f"{name}.yaml"
     with open(path, encoding="utf-8") as f:
         return ModeConfig(**yaml.safe_load(f))
+
+
+def load_all_modes() -> dict[str, ModeConfig]:
+    modes_dir = CONFIG_DIR / "modes"
+    result = {}
+    for p in sorted(modes_dir.glob("*.yaml")):
+        name = p.stem
+        result[name] = load_mode(name)
+    return result
 
 
 @lru_cache

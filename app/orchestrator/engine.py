@@ -29,6 +29,15 @@ _MOVE_EVENT = {
     Move.REDIRECT: EventType.TOPIC_REDIRECT,
     Move.INTERRUPT: EventType.INTERRUPTION,
     Move.OPEN: EventType.NEW_POINT,
+    Move.POINT_OF_ORDER: EventType.POINT_OF_ORDER,
+    Move.MOTION: EventType.MOTION_RAISED,
+    Move.YIELD: EventType.YIELD_FLOOR,
+    Move.POINT_OF_INFORMATION: EventType.POI_OFFERED,
+    Move.REBUTTAL: EventType.REBUTTAL,
+    Move.WHIP_SPEECH: EventType.REBUTTAL,
+    Move.APPEAL_TO_AUDIENCE: EventType.AUDIENCE_APPEAL,
+    Move.FACTCHECK: EventType.NEW_POINT,
+    Move.PERSONAL_STORY: EventType.NEW_POINT,
 }
 
 _INTRO_RE = re.compile(r"\b(my name is|i am \w+ and|i'm \w+ and|myself \w+)\b", re.I)
@@ -223,7 +232,32 @@ class Orchestrator:
             return Move.OPEN, None
         if chiming_in and self.rng.random() < p.interruption_propensity:
             return Move.INTERRUPT, target
+
         r = self.rng.random()
+        mode_name = session.mode
+
+        if mode_name == "parliamentary":
+            if r < 0.15 and len(session.turns) > 3:
+                return Move.POINT_OF_INFORMATION, target
+            if r < 0.35:
+                return Move.REBUTTAL, target
+            if r < 0.50 and len(session.turns) > 8:
+                return Move.WHIP_SPEECH, None
+
+        elif mode_name == "mun":
+            if r < 0.10 and len(session.turns) > 4:
+                return Move.POINT_OF_ORDER, None
+            if r < 0.20:
+                return Move.MOTION, None
+
+        elif mode_name == "tv_debate":
+            if r < 0.15:
+                return Move.APPEAL_TO_AUDIENCE, None
+            if r < 0.25:
+                return Move.FACTCHECK, target
+            if r < 0.35:
+                return Move.PERSONAL_STORY, None
+
         if last and r < (1 - p.agreeableness) * 0.6:
             return Move.DISAGREE, target
         if last and r < (1 - p.agreeableness) * 0.6 + p.agreeableness * 0.35:
@@ -235,18 +269,61 @@ class Orchestrator:
         return Move.NEW_POINT, None
 
     def _system_prompt(self, session: Session, p: Persona) -> str:
-        return (
-            f"You are {p.name}, a participant in a timed group discussion.\n"
+        mode_name = session.mode
+        moves_list = "|".join(m for m in self.mode.moves) if self.mode.moves else "open|new_point|build|disagree|question|summary|redirect|interrupt"
+
+        base = (
+            f"You are {p.name}, a participant in a timed discussion.\n"
             f"archetype: {p.archetype}\n"
             f"Personality: {p.style}\n"
             f'Topic: "{session.topic}"\n'
-            "Rules: stay fully in character; speak like a real person in a live GD "
-            "(2-4 sentences, spoken register, no lists or markdown); engage with what "
-            "others actually said, including the other AI participants, not only the "
-            "student; never break character or mention being an AI.\n"
-            'Respond ONLY with JSON: {"move": "<open|new_point|build|disagree|question|'
-            'summary|redirect|interrupt>", "text": "<what you say>", "target": "<name or null>"}'
         )
+
+        if mode_name == "mun":
+            assignment = next((a for a in session.nation_assignments if a.speaker == p.name), None)
+            if assignment:
+                base += (
+                    f"You represent {assignment.nation} ({assignment.code}) in this Model United Nations session.\n"
+                    f"National interests: {assignment.interests}\n"
+                    "Rules: argue strictly from your assigned nation's perspective; use formal "
+                    "diplomatic language; address other delegates by their nation name; reference "
+                    "real geopolitical positions; you may raise motions and points of order.\n"
+                )
+            else:
+                base += "This is a Model United Nations simulation. Use formal diplomatic language.\n"
+
+        elif mode_name == "parliamentary":
+            assignment = next((a for a in session.role_assignments if a.speaker == p.name), None)
+            if assignment:
+                base += (
+                    f"You are the {assignment.title} ({assignment.code}) on the {assignment.side} side.\n"
+                    "Rules: deliver structured speeches; you may offer or respond to Points of "
+                    "Information; build your side's case; rebut the opposition; use parliamentary "
+                    "language ('through the chair', 'honourable member').\n"
+                )
+            else:
+                base += "This is a British Parliamentary debate. Use formal parliamentary language.\n"
+
+        elif mode_name == "tv_debate":
+            base += (
+                "This is a TV-style panel debate. Your goal is audience persuasion.\n"
+                "Rules: be punchy and quotable; use personal stories and emotional appeals; "
+                "fact-check opponents; play to the audience; short impactful statements beat "
+                "long lectures.\n"
+            )
+        else:
+            base += (
+                "Rules: stay fully in character; speak like a real person in a live GD "
+                "(2-4 sentences, spoken register, no lists or markdown); engage with what "
+                "others actually said, including the other AI participants, not only the "
+                "student; never break character or mention being an AI.\n"
+            )
+
+        base += (
+            f'Respond ONLY with JSON: {{"move": "<{moves_list}>", '
+            '"text": "<what you say>", "target": "<name or null>"}'
+        )
+        return base
 
     def _conversation_text(self, session: Session, tail: int = 16) -> str:
         lines = [f"[{t.speaker}] {t.text}" for t in session.turns[-tail:]]

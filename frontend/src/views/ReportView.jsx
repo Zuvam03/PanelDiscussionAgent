@@ -21,9 +21,18 @@ const MOVE_ICONS = {
   redirect: { icon: '↻', label: 'Redirect' },
   interrupt: { icon: '⚡', label: 'Interrupt' },
   open: { icon: '★', label: 'Opened' },
+  point_of_order: { icon: '🔨', label: 'Point of Order' },
+  motion: { icon: '📜', label: 'Motion' },
+  yield: { icon: '🤝', label: 'Yield' },
+  point_of_information: { icon: '💡', label: 'POI' },
+  rebuttal: { icon: '🔄', label: 'Rebuttal' },
+  whip_speech: { icon: '🎯', label: 'Whip Speech' },
+  appeal_to_audience: { icon: '📢', label: 'Audience Appeal' },
+  factcheck: { icon: '✓', label: 'Fact Check' },
+  personal_story: { icon: '💭', label: 'Story' },
 };
 
-const TABS = [
+const BASE_TABS = [
   { id: 'overview', label: 'Overview' },
   { id: 'performance', label: 'Your Points' },
   { id: 'compare', label: 'Compare' },
@@ -152,7 +161,7 @@ function EventTimeline({ turns, personaNames }) {
   );
 }
 
-export default function ReportView({ sessionId, onBack }) {
+export default function ReportView({ sessionId, onBack, onJudge }) {
   const [report, setReport] = useState(null);
   const [session, setSession] = useState(null);
   const [error, setError] = useState('');
@@ -182,7 +191,11 @@ export default function ReportView({ sessionId, onBack }) {
     );
   }
 
-  const { metrics, structural_markers, swot, next_actions, coaching } = report;
+  const { metrics, structural_markers, swot, next_actions, coaching, scoreboard } = report;
+  const hasScoreboard = scoreboard && scoreboard.rankings && scoreboard.rankings.length > 0;
+  const TABS = hasScoreboard
+    ? [{ id: 'scoreboard', label: 'Scoreboard' }, ...BASE_TABS]
+    : BASE_TABS;
   const studentMetrics = metrics.find(m => m.speaker === 'student');
   const studentEvals = coaching?.point_evaluations?.filter(pe => pe.speaker === 'student') || [];
   const agentEvals = coaching?.point_evaluations?.filter(pe => pe.speaker !== 'student') || [];
@@ -216,6 +229,95 @@ export default function ReportView({ sessionId, onBack }) {
           </button>
         ))}
       </div>
+
+      {/* ========== TAB: SCOREBOARD ========== */}
+      {activeTab === 'scoreboard' && hasScoreboard && (
+        <div className="tab-panel">
+          <section className="report-section">
+            <div className="section-badge gold">Rankings</div>
+            <h3 className="section-title">Competition Scoreboard</h3>
+            <div className="scoreboard-rankings">
+              {scoreboard.rankings.map((r) => (
+                <div key={r.speaker} className={`ranking-row ${r.speaker === 'student' ? 'is-you' : ''}`}>
+                  <span className="ranking-pos">#{r.rank}</span>
+                  <span className="ranking-name">{r.speaker === 'student' ? 'You' : r.speaker}</span>
+                  <span className="ranking-score">{r.score}</span>
+                  <div className="ranking-bar">
+                    <div className="ranking-bar-fill" style={{
+                      width: `${Math.min((r.score / 100) * 100, 100)}%`,
+                      background: r.speaker === 'student' ? 'var(--accent)' : 'var(--border)',
+                    }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {scoreboard.category_breakdown && (
+            <section className="report-section">
+              <div className="section-badge blue">Breakdown</div>
+              <h3 className="section-title">Category Scores</h3>
+              <div className="metrics-table-wrap">
+                <table className="metrics-table">
+                  <thead>
+                    <tr>
+                      <th>Speaker</th>
+                      {Object.keys(Object.values(scoreboard.category_breakdown)[0] || {}).map(cat => (
+                        <th key={cat}>{cat}</th>
+                      ))}
+                      <th>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries(scoreboard.category_breakdown).map(([speaker, cats]) => (
+                      <tr key={speaker} className={speaker === 'student' ? 'student-row' : ''}>
+                        <td>{speaker === 'student' ? 'You' : speaker}</td>
+                        {Object.values(cats).map((val, i) => (
+                          <td key={i}>{val}</td>
+                        ))}
+                        <td style={{ fontWeight: 700 }}>
+                          {scoreboard.speaker_totals[speaker]?.toFixed(1) || '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
+
+          {scoreboard.vote_final && (
+            <section className="report-section">
+              <div className="section-badge green">Audience</div>
+              <h3 className="section-title">Final Audience Influence</h3>
+              <div className="vote-final-bars">
+                {Object.entries(scoreboard.vote_final)
+                  .sort((a, b) => b[1] - a[1])
+                  .map(([speaker, score]) => (
+                    <div key={speaker} className="vote-final-row">
+                      <span className="vote-final-name">{speaker === 'student' ? 'You' : speaker}</span>
+                      <div className="vote-final-track">
+                        <div className="vote-final-fill" style={{
+                          width: `${Math.max(score, 2)}%`,
+                          background: speaker === 'student' ? 'var(--accent)' : 'var(--text-dim)',
+                        }} />
+                      </div>
+                      <span className="vote-final-val">{score.toFixed(0)}</span>
+                    </div>
+                  ))}
+              </div>
+            </section>
+          )}
+
+          {onJudge && (
+            <div style={{ textAlign: 'center', marginTop: 16 }}>
+              <button className="btn btn-secondary" onClick={() => onJudge(sessionId)}>
+                Submit Your Own Judge Scores
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ========== TAB: OVERVIEW ========== */}
       {activeTab === 'overview' && (

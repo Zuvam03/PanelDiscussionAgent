@@ -450,6 +450,12 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
         <div className={`participant you ${activeSpeaker === 'student' ? 'speaking' : ''} ${isListening ? 'listening' : ''}`}>
           <div className="participant-avatar" style={{ borderColor: 'var(--accent)' }}>You</div>
           <div className="participant-name">You</div>
+          {session.student_nation && (
+            <div className="mode-badge nation">{session.student_nation}</div>
+          )}
+          {session.student_role && (
+            <div className="mode-badge role">{session.student_role} ({session.student_side})</div>
+          )}
           {quota && (
             <QuotaBar used={quota.used.student || 0} limit={quota.limit} color="var(--accent)" />
           )}
@@ -457,11 +463,21 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
         {session.persona_names.map((name) => {
           const p = personas[name];
           const color = agentColor(name);
+          const nationAssign = (session.nation_assignments || []).find(a => a.speaker === name);
+          const roleAssign = (session.role_assignments || []).find(a => a.speaker === name);
           return (
             <div key={name} className={`participant ${activeSpeaker === name ? 'speaking' : ''}`}>
               <div className="participant-avatar" style={{ borderColor: color }}>{name[0]}</div>
               <div className="participant-name">{name}</div>
-              {p && <div className="participant-archetype">{p.archetype.replace(/_/g, ' ')}</div>}
+              {nationAssign && (
+                <div className="mode-badge nation">{nationAssign.nation} ({nationAssign.code})</div>
+              )}
+              {roleAssign && (
+                <div className="mode-badge role">{roleAssign.title} ({roleAssign.side})</div>
+              )}
+              {!nationAssign && !roleAssign && p && (
+                <div className="participant-archetype">{p.archetype.replace(/_/g, ' ')}</div>
+              )}
               {quota && (
                 <QuotaBar used={quota.used[name] || 0} limit={quota.limit} color={color} />
               )}
@@ -469,6 +485,30 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
           );
         })}
       </div>
+
+      {/* Vote tracker for competition modes */}
+      {session.vote_state && (
+        <div className="vote-tracker">
+          <div className="vote-tracker-label">Audience Influence</div>
+          <div className="vote-bars">
+            {Object.entries(session.vote_state.scores).map(([speaker, score]) => {
+              const pct = Math.max((score / session.vote_state.audience_size) * 100, 2);
+              return (
+                <div key={speaker} className="vote-bar-item">
+                  <span className="vote-bar-name">{speaker === 'student' ? 'You' : speaker}</span>
+                  <div className="vote-bar-track">
+                    <div className="vote-bar-fill" style={{
+                      width: `${Math.min(pct, 100)}%`,
+                      background: speaker === 'student' ? 'var(--accent)' : agentColor(speaker),
+                    }} />
+                  </div>
+                  <span className="vote-bar-val">{score.toFixed(0)}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Mic control area */}
       {isLive && micAllowed && (() => {

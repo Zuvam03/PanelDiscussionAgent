@@ -1,0 +1,88 @@
+# Parliamentary Debate mode config.
+# Structured speeches with government and opposition sides. Points of
+# information, vote counting, and influence tracking.
+
+name: parliamentary
+display_name: Parliamentary Debate
+description: >
+  British Parliamentary style debate. Government (PM + DPM) vs Opposition
+  (LO + DLO) with structured speeches, Points of Information, and floor
+  votes. Practice delivering speeches and handling POIs.
+
+defaults:
+  num_agents: 3
+  duration_minutes: 15
+  thinking_seconds: 60
+  wrap_up_fraction: 0.85
+  word_quota: 500
+
+turn_taking:
+  max_agent_turns_per_burst: 1
+  floor_threshold: 0.30
+  silence_tick_seconds: 10
+  silence_event_after_ticks: 3
+  chime_in_chance: 0.2
+
+moves:
+  - open
+  - new_point
+  - build
+  - disagree
+  - question
+  - summary
+  - redirect
+  - interrupt
+  - point_of_information
+  - rebuttal
+  - whip_speech
+
+topics:
+  - "This House would ban all political advertising on social media"
+  - "This House believes artificial intelligence will create more jobs than it destroys"
+  - "This House would abolish the death penalty worldwide"
+  - "This House believes billionaires should not exist"
+  - "This House would make voting compulsory"
+  - "This House believes cancel culture does more harm than good"
+  - "This House would implement a universal basic income"
+  - "This House believes climate change is the greatest threat to humanity"
+
+roles:
+  government:
+    - title: Prime Minister
+      code: PM
+      duty: "Opens the case, defines the motion, sets the framework"
+    - title: Deputy Prime Minister
+      code: DPM
+      duty: "Extends the case, provides examples, handles rebuttal"
+  opposition:
+    - title: Leader of Opposition
+      code: LO
+      duty: "Counters the PM's framework, presents the opposition case"
+    - title: Deputy Leader of Opposition
+      code: DLO
+      duty: "Extends opposition case, delivers key rebuttals"
+
+scoring:
+  categories:
+    - name: Argument Construction
+      weight: 0.25
+      description: "Clarity, logic, and structure of arguments presented"
+    - name: Rebuttal Effectiveness
+      weight: 0.20
+      description: "Quality of responses to opposing arguments"
+    - name: POI Handling
+      weight: 0.15
+      description: "Offering and responding to Points of Information"
+    - name: Persuasion & Delivery
+      weight: 0.20
+      description: "How compelling and convincing the speech was"
+    - name: Strategic Awareness
+      weight: 0.20
+      description: "Understanding of debate dynamics and tactical decisions"
+
+vote_mechanics:
+  influence_tracking: true
+  audience_size: 100
+  starting_split: 50
+  swing_per_strong_point: 5
+  swing_per_weak_point: -3

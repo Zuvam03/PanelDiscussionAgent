@@ -13,7 +13,8 @@ async function request(path, options = {}) {
 }
 
 export const api = {
-  getConfig: () => request('/config'),
+  getConfig: (mode = 'gd') => request(`/config?mode=${mode}`),
+  getModes: () => request('/modes'),
   listSessions: () => request('/sessions'),
   createSession: (data) =>
     request('/sessions', { method: 'POST', body: JSON.stringify(data) }),
@@ -29,4 +30,6 @@ export const api = {
   getReport: (id, regenerate = false) =>
     request(`/sessions/${id}/report${regenerate ? '?regenerate=true' : ''}`),
   deleteSession: (id) => request(`/sessions/${id}`, { method: 'DELETE' }),
+  submitJudgeScores: (id, data) =>
+    request(`/sessions/${id}/judge`, { method: 'POST', body: JSON.stringify(data) }),
 };

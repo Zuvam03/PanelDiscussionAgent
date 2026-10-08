@@ -58,13 +58,21 @@ class SessionRepository:
     def list_summaries(self) -> list[dict]:
         with _conn() as c:
             rows = c.execute(
-                "SELECT id, created_at, topic, status, report IS NOT NULL "
+                "SELECT id, created_at, topic, status, report IS NOT NULL, body "
                 "FROM sessions ORDER BY created_at DESC").fetchall()
-        return [
-            {"id": r[0], "created_at": r[1], "topic": r[2],
-             "status": r[3], "has_report": bool(r[4])}
-            for r in rows
-        ]
+        results = []
+        for r in rows:
+            entry = {
+                "id": r[0], "created_at": r[1], "topic": r[2],
+                "status": r[3], "has_report": bool(r[4]),
+            }
+            try:
+                body = json.loads(r[5])
+                entry["mode"] = body.get("mode", "gd")
+            except (json.JSONDecodeError, TypeError):
+                entry["mode"] = "gd"
+            results.append(entry)
+        return results
 
     def delete(self, session_id: str) -> bool:
         """Per-session deletion is a day-one requirement (PRD §6)."""
