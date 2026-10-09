@@ -21,10 +21,10 @@ import random
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
 from .analysis.report import generate_report
@@ -39,6 +39,7 @@ from .models import (
 )
 from .orchestrator.engine import Orchestrator
 from .providers.factory import get_analysis_provider, get_live_provider
+from .providers.voice import get_stt_provider, get_tts_provider
 from .storage.db import SessionRepository
 
 app = FastAPI(title="PanelPrep", version="0.2.0")
@@ -299,6 +300,41 @@ def delete_session(session_id: str):
     if not repo.delete(session_id):
         raise HTTPException(404, "session not found")
     return {"deleted": True}
+
+
+@app.get("/api/voice/config")
+def get_voice_config():
+    """Tell the frontend which voice providers are active."""
+    stt = get_stt_provider()
+    tts = get_tts_provider()
+    return {
+        "stt": stt.name if stt else "browser",
+        "tts": tts.name if tts else "browser",
+    }
+
+
+@app.post("/api/voice/transcribe")
+async def transcribe_audio(request: Request):
+    """Server-side STT. Frontend sends audio blob, gets text back."""
+    stt = get_stt_provider()
+    if not stt:
+        raise HTTPException(400, "No server STT configured; use browser STT")
+    content_type = request.headers.get("content-type", "audio/webm")
+    audio_data = await request.body()
+    if not audio_data:
+        raise HTTPException(400, "No audio data")
+    result = await stt.transcribe(audio_data, content_type)
+    return {"text": result.text, "confidence": result.confidence}
+
+
+@app.post("/api/voice/synthesize")
+async def synthesize_speech(text: str, voice: str = "default"):
+    """Server-side TTS. Returns audio bytes."""
+    tts = get_tts_provider()
+    if not tts:
+        raise HTTPException(400, "No server TTS configured; use browser TTS")
+    result = await tts.synthesize(text, voice)
+    return Response(content=result.audio, media_type=result.content_type)
 
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend" / "dist"

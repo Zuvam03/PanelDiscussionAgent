@@ -32,4 +32,5 @@ export const api = {
   deleteSession: (id) => request(`/sessions/${id}`, { method: 'DELETE' }),
   submitJudgeScores: (id, data) =>
     request(`/sessions/${id}/judge`, { method: 'POST', body: JSON.stringify(data) }),
+  getVoiceConfig: () => request('/voice/config'),
 };

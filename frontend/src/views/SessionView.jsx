@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import { useSpeechRecognition } from '../audio/useSpeechRecognition';
 import {
@@ -40,6 +40,7 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
   const [micAllowed, setMicAllowed] = useState(false);
   const [agentsTalking, setAgentsTalking] = useState(false);
   const [quota, setQuota] = useState(null);
+  const [pendingCount, setPendingCount] = useState(0);
 
   const tickRef = useRef(null);
   const clockRef = useRef(null);
@@ -55,6 +56,8 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
   const userSpeakingRef = useRef(false);
   const userSpeakingTimeout = useRef(null);
   const wasAgentsTalking = useRef(false);
+  const pendingTurnsRef = useRef([]);
+  const interimRef = useRef('');
 
   // Keep refs in sync with state so processQueue always has fresh values
   voiceMapRef.current = voiceMap;
@@ -94,6 +97,7 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
     if (!text) return;
     console.log('[mic] GOT TRANSCRIPT:', text);
     setInterimText('');
+    interimRef.current = '';
     clearTimeout(userSpeakingTimeout.current);
 
     // Barge-in: cancel any agent TTS
@@ -102,8 +106,19 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
     isSpeakingRef.current = false;
     setAgentsTalking(false);
     setActiveSpeaker('student');
+    if (pendingTurnsRef.current.length) {
+      setTurns(prev => [...prev, ...pendingTurnsRef.current]);
+      pendingTurnsRef.current = [];
+      setPendingCount(0);
+    }
 
-    userSpeakingRef.current = false;
+    // Set a cooldown period after user finishes speaking —
+    // don't let agent TTS start for 1.5s after last final transcript
+    userSpeakingRef.current = true;
+    setTimeout(() => {
+      userSpeakingRef.current = false;
+      flushQueuedTurns();
+    }, 1500);
 
     if (sendingRef.current) {
       speechQueueRef.current.push(text);
@@ -114,6 +129,7 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
 
   function handleInterim(text) {
     setInterimText(text);
+    interimRef.current = text;
     setActiveSpeaker('student');
     userSpeakingRef.current = true;
     // Safety timer: if no final result arrives within 4s of the last
@@ -126,9 +142,10 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
         console.log('[mic] userSpeaking safety reset — no final result received');
         userSpeakingRef.current = false;
         setInterimText('');
+        interimRef.current = '';
         flushQueuedTurns();
       }
-    }, 4000);
+    }, 6000);
   }
 
   function flushQueuedTurns() {
@@ -147,16 +164,17 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
     // for the API. The mic will be stopped when TTS starts playing.
     try {
       const res = await api.sendMessage(sessionId, text);
-      setTurns((prev) => [...prev, ...res.new_turns]);
       setStatus(res.status);
       if (res.quota) setQuota(res.quota);
 
+      const studentTurns = res.new_turns.filter((t) => t.speaker === 'student');
       const agentTurns = res.new_turns.filter((t) => t.speaker !== 'student');
+      if (studentTurns.length) setTurns((prev) => [...prev, ...studentTurns]);
       for (const t of agentTurns) {
+        pendingTurnsRef.current.push(t);
         ttsQueueRef.current.push(t);
       }
-      // If there are any queued turns (from this response OR from earlier
-      // ticks that were deferred while user was speaking), start playing them
+      if (agentTurns.length) setPendingCount(pendingTurnsRef.current.length);
       if (ttsQueueRef.current.length > 0) {
         micOff();
         setAgentsTalking(true);
@@ -206,7 +224,13 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
       await speak(next.text, voice, {
         rate: params.rate,
         pitch: params.pitch,
-        onStart: () => setActiveSpeaker(next.speaker),
+        onStart: () => {
+          setActiveSpeaker(next.speaker);
+          // Move this turn from pending to visible transcript
+          pendingTurnsRef.current = pendingTurnsRef.current.filter(t => t.id !== next.id);
+          setPendingCount(pendingTurnsRef.current.length);
+          setTurns(prev => [...prev, next]);
+        },
         onEnd: () => setActiveSpeaker(null),
       });
     } catch {
@@ -224,6 +248,11 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
     wasAgentsTalking.current = false;
     setAgentsTalking(false);
     setActiveSpeaker(null);
+    if (pendingTurnsRef.current.length) {
+      setTurns(prev => [...prev, ...pendingTurnsRef.current]);
+      pendingTurnsRef.current = [];
+      setPendingCount(0);
+    }
     // Try starting mic immediately — it may work if Chrome releases
     // audio fast enough. Schedule a fallback restart in case it doesn't.
     micOn();
@@ -340,14 +369,18 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
         const res = await api.tick(sessionId);
         if (res.quota) setQuota(res.quota);
         if (res.new_turns?.length) {
-          setTurns((prev) => [...prev, ...res.new_turns]);
-          for (const t of res.new_turns) {
+          const studentTickTurns = res.new_turns.filter(t => t.speaker === 'student');
+          const agentTickTurns = res.new_turns.filter(t => t.speaker !== 'student');
+          if (studentTickTurns.length) setTurns(prev => [...prev, ...studentTickTurns]);
+          for (const t of agentTickTurns) {
+            pendingTurnsRef.current.push(t);
             ttsQueueRef.current.push(t);
           }
+          if (agentTickTurns.length) setPendingCount(pendingTurnsRef.current.length);
           // Only kill mic and start TTS if user is NOT actively speaking.
           // If user has interim text or is mid-send, queue the turns
           // but don't interrupt — they'll play after user finishes.
-          if (!userSpeakingRef.current && !sendingRef.current) {
+          if (!userSpeakingRef.current && !sendingRef.current && !interimRef.current) {
             micOff();
             setAgentsTalking(true);
             processQueue();
@@ -359,6 +392,11 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
           clearInterval(clockRef.current);
           micOff();
           cancelAllSpeech();
+          if (pendingTurnsRef.current.length) {
+            setTurns(prev => [...prev, ...pendingTurnsRef.current]);
+            pendingTurnsRef.current = [];
+            setPendingCount(0);
+          }
         }
       } catch {
         // ignore
@@ -371,6 +409,11 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
     clearInterval(clockRef.current);
     micOff();
     cancelAllSpeech();
+    // Flush any remaining pending turns to transcript
+    if (pendingTurnsRef.current.length) {
+      setTurns(prev => [...prev, ...pendingTurnsRef.current]);
+      pendingTurnsRef.current = [];
+    }
     await api.endSession(sessionId);
     setStatus('ended');
   }
@@ -569,6 +612,16 @@ export default function SessionView({ sessionId, onEnd, onBack }) {
               <span className="transcript-text">{t.text}</span>
             </div>
           ))}
+          {pendingCount > 0 && (
+            <div className="transcript-line agent-thinking">
+              <span className="transcript-speaker" style={{ color: 'var(--text-dim)' }}>
+                {pendingTurnsRef.current[0]?.speaker || 'Agent'}
+              </span>
+              <span className="thinking-dots">
+                <span>.</span><span>.</span><span>.</span>
+              </span>
+            </div>
+          )}
           {status === 'wrapping' && <div className="transcript-line system">Time is almost up!</div>}
           {status === 'ended' && <div className="transcript-line system">Discussion ended.</div>}
           <div ref={transcriptEnd} />
